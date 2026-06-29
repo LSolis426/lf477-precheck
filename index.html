@@ -560,15 +560,15 @@ function validate(workbook) {
         }
       }
 
-      // ── Rule 8: Weight values 0.1–999 kg ─────────────────────────────────
+      // ── Rule 8: Weight values 0.1–350 kg ─────────────────────────────────
       const weightFields = [
         [C.WT_UH,'AP (Weight Upper Hard)'],[C.WT_LH,'AQ (Weight Lower Hard)'],
         [C.WT_US,'AR (Weight Upper Soft)'],[C.WT_LS,'AS (Weight Lower Soft)'],
       ];
       for (const [idx, label] of weightFields) {
         const v = row[idx];
-        if (typeof v === 'number' && (v < 0.1 || v > 999)) {
-          allIssues.push({ rule: 8, ...loc, msg: `Col ${label} weight ${v} kg is outside the allowed range of 0.1–999 kg` });
+        if (typeof v === 'number' && (v < 0.1 || v > 350)) {
+          allIssues.push({ rule: 8, ...loc, msg: `Col ${label} weight ${v} kg is outside the allowed range of 0.1–350 kg` });
         }
       }
 
@@ -714,7 +714,7 @@ const RULE_INFO = {
   5: { title: 'Rule 5 — Required Field Missing', severity: 'err' },
   6: { title: 'Rule 6 — KVO Rate Missing or Out of Range (Rate mode)', severity: 'err' },
   7: { title: 'Rule 7 — KVO Rate Should Be Blank (Off / Continue Primary Rate)', severity: 'warn' },
-  8: { title: 'Rule 8 — Weight Outside 0.1–999 kg', severity: 'err' },
+  8: { title: 'Rule 8 — Weight Outside 0.1–350 kg', severity: 'err' },
   9: { title: 'Rule 9 — Name Too Long for Display Field', severity: 'warn' },
   10: { title: 'Rule 10 — Alphabetical Order May Surprise Clinicians', severity: 'warn' },
   11: { title: 'Rule 11 — Time Limit Column Not in hh:mm:ss Format', severity: 'err' },
