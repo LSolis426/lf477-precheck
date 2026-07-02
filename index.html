@@ -1147,7 +1147,7 @@ function renderResults(issues) {
                     `<span style="color:#9ca3af">→</span> <span class="unit-chip non-ml">${escHtml(s.value)}</span><span class="unit-chip-label">${escHtml(s.label)}</span>`
                   ).join(' ');
                   issueCell = `<div class="unit-chips">${priChip} ${secChips}</div>
-                               <div class="unit-compat-note">Bolus and loading doses are disabled on the pump when Primary Dose Unit is not /min or /hr</div>`;
+                               <div class="unit-compat-note">Bolus and loading infusions are disabled on the pump when Primary Dose Unit is not /min or /hr (columns T–AO must be blank)</div>`;
                 } else {
                   issueCell = `<span class="msg-col">${escHtml(i.msg)}</span>`;
                 }
