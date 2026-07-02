@@ -537,6 +537,46 @@ function validate(workbook) {
         }
       }
 
+      // ── Rule 16: Bolus/Loading fields must be blank if primary unit is not /min or /hr ──
+      if (!isEmpty(row[C.PRI_UNIT])) {
+        const priUnit16 = String(row[C.PRI_UNIT]).toLowerCase();
+        const isRateBased = priUnit16.includes('/min') || priUnit16.includes('/hr');
+        if (!isRateBased) {
+          const r16cols = [
+            [C.BOL_UNIT,   'T (Bolus Dose Unit)'],
+            [C.BOL_INIT,   'U (Bolus Initial Dose)'],
+            [C.BOL_UH,     'V (Bolus Upper Hard)'],
+            [C.BOL_LH,     'W (Bolus Lower Hard)'],
+            [C.BOL_US,     'X (Bolus Upper Soft)'],
+            [C.BOL_LS,     'Y (Bolus Lower Soft)'],
+            [C.BOL_T_INIT, 'Z (Bolus Initial Time)'],
+            [C.BOL_T_UH,   'AA (Bolus Time Upper Hard)'],
+            [C.BOL_T_LH,   'AB (Bolus Time Lower Hard)'],
+            [C.BOL_T_US,   'AC (Bolus Time Upper Soft)'],
+            [C.BOL_T_LS,   'AD (Bolus Time Lower Soft)'],
+            [C.LOD_UNIT,   'AE (Loading Dose Unit)'],
+            [C.LOD_INIT,   'AF (Loading Initial Dose)'],
+            [C.LOD_UH,     'AG (Loading Upper Hard)'],
+            [C.LOD_LH,     'AH (Loading Lower Hard)'],
+            [C.LOD_US,     'AI (Loading Upper Soft)'],
+            [C.LOD_LS,     'AJ (Loading Lower Soft)'],
+            [C.LOD_T_INIT, 'AK (Loading Initial Time)'],
+            [C.LOD_T_UH,   'AL (Loading Time Upper Hard)'],
+            [C.LOD_T_LH,   'AM (Loading Time Lower Hard)'],
+            [C.LOD_T_US,   'AN (Loading Time Upper Soft)'],
+            [C.LOD_T_LS,   'AO (Loading Time Lower Soft)'],
+          ];
+          const filledCols = r16cols.filter(([idx]) => !isEmpty(row[idx]));
+          if (filledCols.length > 0) {
+            allIssues.push({ rule: 16, ...loc,
+              r16unit: String(row[C.PRI_UNIT]),
+              r16cols: filledCols.map(([, lbl]) => lbl),
+              msg: `Primary Dose Unit "${row[C.PRI_UNIT]}" is not rate-based (/min or /hr) — bolus and loading fields must be blank`,
+            });
+          }
+        }
+      }
+
       // ── Rule 3: Limits in descending order ───────────────────────────────
       const limitSets = [
         { section: 'Primary',  vals: [
@@ -851,6 +891,7 @@ const RULE_INFO = {
   13: { title: 'Rule 13 — Drug Display Order Within Care Area', severity: 'warn' },
   14: { title: 'Rule 14 — Drug Name Spelling Check', severity: 'warn' },
   15: { title: 'Rule 15 — Mismatched Dose Units (mL Primary with non-mL Bolus/Loading)', severity: 'err' },
+  16: { title: 'Rule 16 — Bolus/Loading Fields Filled but Primary Unit is Not Rate-Based (/min or /hr)', severity: 'err' },
 };
 
 function renderResults(issues) {
@@ -1117,6 +1158,12 @@ function renderResults(issues) {
                   const chipB = `<span class="unit-chip ${i.r15sec.isMl ? 'is-ml' : 'non-ml'}">${escHtml(i.r15sec.value)}</span><span class="unit-chip-label">${escHtml(i.r15sec.label)}</span>`;
                   issueCell = `<div class="unit-chips">${chipA} <span style="color:#9ca3af">vs</span> ${chipB}</div>
                                <div class="unit-compat-note">mL dose units are only compatible with other mL dose units</div>`;
+                } else if (i.r16unit !== undefined) {
+                  // Rule 16: show primary unit chip + list of filled columns
+                  const chip = `<span class="unit-chip non-ml">${escHtml(i.r16unit)}</span>`;
+                  const colList = i.r16cols.join(', ');
+                  issueCell = `<div class="unit-chips">${chip}<span class="unit-chip-label">Primary Dose Unit (col I) — not rate-based</span></div>
+                               <div class="unit-compat-note">Bolus/loading infusions require a /min or /hr primary unit — filled: ${escHtml(colList)}</div>`;
                 } else {
                   issueCell = `<span class="msg-col">${escHtml(i.msg)}</span>`;
                 }
