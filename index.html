@@ -542,35 +542,17 @@ function validate(workbook) {
         const priUnit16 = String(row[C.PRI_UNIT]).toLowerCase();
         const isRateBased = priUnit16.includes('/min') || priUnit16.includes('/hr');
         if (!isRateBased) {
-          const r16cols = [
-            [C.BOL_UNIT,   'T (Bolus Dose Unit)'],
-            [C.BOL_INIT,   'U (Bolus Initial Dose)'],
-            [C.BOL_UH,     'V (Bolus Upper Hard)'],
-            [C.BOL_LH,     'W (Bolus Lower Hard)'],
-            [C.BOL_US,     'X (Bolus Upper Soft)'],
-            [C.BOL_LS,     'Y (Bolus Lower Soft)'],
-            [C.BOL_T_INIT, 'Z (Bolus Initial Time)'],
-            [C.BOL_T_UH,   'AA (Bolus Time Upper Hard)'],
-            [C.BOL_T_LH,   'AB (Bolus Time Lower Hard)'],
-            [C.BOL_T_US,   'AC (Bolus Time Upper Soft)'],
-            [C.BOL_T_LS,   'AD (Bolus Time Lower Soft)'],
-            [C.LOD_UNIT,   'AE (Loading Dose Unit)'],
-            [C.LOD_INIT,   'AF (Loading Initial Dose)'],
-            [C.LOD_UH,     'AG (Loading Upper Hard)'],
-            [C.LOD_LH,     'AH (Loading Lower Hard)'],
-            [C.LOD_US,     'AI (Loading Upper Soft)'],
-            [C.LOD_LS,     'AJ (Loading Lower Soft)'],
-            [C.LOD_T_INIT, 'AK (Loading Initial Time)'],
-            [C.LOD_T_UH,   'AL (Loading Time Upper Hard)'],
-            [C.LOD_T_LH,   'AM (Loading Time Lower Hard)'],
-            [C.LOD_T_US,   'AN (Loading Time Upper Soft)'],
-            [C.LOD_T_LS,   'AO (Loading Time Lower Soft)'],
-          ];
-          const filledCols = r16cols.filter(([idx]) => !isEmpty(row[idx]));
-          if (filledCols.length > 0) {
+          const bolCols = [C.BOL_UNIT,C.BOL_INIT,C.BOL_UH,C.BOL_LH,C.BOL_US,C.BOL_LS,C.BOL_T_INIT,C.BOL_T_UH,C.BOL_T_LH,C.BOL_T_US,C.BOL_T_LS];
+          const lodCols = [C.LOD_UNIT,C.LOD_INIT,C.LOD_UH,C.LOD_LH,C.LOD_US,C.LOD_LS,C.LOD_T_INIT,C.LOD_T_UH,C.LOD_T_LH,C.LOD_T_US,C.LOD_T_LS];
+          const bolFilled = bolCols.some(idx => !isEmpty(row[idx]));
+          const lodFilled = lodCols.some(idx => !isEmpty(row[idx]));
+          if (bolFilled || lodFilled) {
+            const r16sections = [];
+            if (bolFilled) r16sections.push({ label: 'Bolus (col T)', value: !isEmpty(row[C.BOL_UNIT]) ? String(row[C.BOL_UNIT]) : '(no unit)' });
+            if (lodFilled) r16sections.push({ label: 'Loading (col AE)', value: !isEmpty(row[C.LOD_UNIT]) ? String(row[C.LOD_UNIT]) : '(no unit)' });
             allIssues.push({ rule: 16, ...loc,
-              r16unit: String(row[C.PRI_UNIT]),
-              r16cols: filledCols.map(([, lbl]) => lbl),
+              r16priUnit: String(row[C.PRI_UNIT]),
+              r16sections,
               msg: `Primary Dose Unit "${row[C.PRI_UNIT]}" is not rate-based (/min or /hr) — bolus and loading fields must be blank`,
             });
           }
@@ -1158,12 +1140,14 @@ function renderResults(issues) {
                   const chipB = `<span class="unit-chip ${i.r15sec.isMl ? 'is-ml' : 'non-ml'}">${escHtml(i.r15sec.value)}</span><span class="unit-chip-label">${escHtml(i.r15sec.label)}</span>`;
                   issueCell = `<div class="unit-chips">${chipA} <span style="color:#9ca3af">vs</span> ${chipB}</div>
                                <div class="unit-compat-note">mL dose units are only compatible with other mL dose units</div>`;
-                } else if (i.r16unit !== undefined) {
-                  // Rule 16: show primary unit chip + list of filled columns
-                  const chip = `<span class="unit-chip non-ml">${escHtml(i.r16unit)}</span>`;
-                  const colList = i.r16cols.join(', ');
-                  issueCell = `<div class="unit-chips">${chip}<span class="unit-chip-label">Primary Dose Unit (col I) — not rate-based</span></div>
-                               <div class="unit-compat-note">Bolus/loading infusions require a /min or /hr primary unit — filled: ${escHtml(colList)}</div>`;
+                } else if (i.r16priUnit !== undefined) {
+                  // Rule 16: show primary unit + each conflicting section as chips
+                  const priChip = `<span class="unit-chip non-ml">${escHtml(i.r16priUnit)}</span><span class="unit-chip-label">Primary (col I)</span>`;
+                  const secChips = i.r16sections.map(s =>
+                    `<span style="color:#9ca3af">→</span> <span class="unit-chip non-ml">${escHtml(s.value)}</span><span class="unit-chip-label">${escHtml(s.label)}</span>`
+                  ).join(' ');
+                  issueCell = `<div class="unit-chips">${priChip} ${secChips}</div>
+                               <div class="unit-compat-note">Bolus and loading doses are disabled on the pump when Primary Dose Unit is not /min or /hr</div>`;
                 } else {
                   issueCell = `<span class="msg-col">${escHtml(i.msg)}</span>`;
                 }
