@@ -139,6 +139,12 @@
   .spell-word { font-family: monospace; font-size: 13px; letter-spacing: 0.4px; margin-bottom: 3px; }
   .spell-wrong { background: #fef08a; border-radius: 2px; padding: 0 1px; font-weight: 700; }
   .spell-suggest { font-size: 12px; color: #6b7280; }
+  .unit-chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+  .unit-chip { display: inline-block; font-family: monospace; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 4px; letter-spacing: 0.3px; }
+  .unit-chip.is-ml { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
+  .unit-chip.non-ml { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+  .unit-chip-label { font-size: 11px; color: #6b7280; }
+  .unit-compat-note { font-size: 12px; color: #6b7280; }
 
   .run-btn {
     display: none; margin: 0 auto 24px; padding: 11px 28px; background: #4a6cf7;
@@ -512,6 +518,25 @@ function validate(workbook) {
         }
       }
 
+      // ── Rule 15: Bolus/Loading dose units must match mL vs non-mL of Primary ─
+      const priIsMl = isMLUnit(row[C.PRI_UNIT]);
+      const secUnits15 = [
+        [C.BOL_UNIT, 'T (Bolus Dose Unit)',    'Bolus'],
+        [C.LOD_UNIT, 'AE (Loading Dose Unit)', 'Loading'],
+      ];
+      for (const [idx, label, section] of secUnits15) {
+        const secUnit = row[idx];
+        if (isEmpty(secUnit)) continue;
+        const secIsMl = isMLUnit(secUnit);
+        if ((priIsMl && !secIsMl) || (!priIsMl && secIsMl && !isEmpty(row[C.PRI_UNIT]))) {
+          allIssues.push({ rule: 15, ...loc,
+            r15pri: { label: 'Primary (col I)',          value: String(row[C.PRI_UNIT]), isMl: priIsMl },
+            r15sec: { label: `${section} (col ${label.split(' ')[0]})`, value: String(secUnit),         isMl: secIsMl },
+            msg: `Primary Dose Unit "${row[C.PRI_UNIT]}" vs ${section} Dose Unit "${secUnit}" — mL dose units are only compatible with other mL dose units`,
+          });
+        }
+      }
+
       // ── Rule 3: Limits in descending order ───────────────────────────────
       const limitSets = [
         { section: 'Primary',  vals: [
@@ -825,6 +850,7 @@ const RULE_INFO = {
   12: { title: 'Rule 12 — Conc Unit Filled Without Conc Amount or Diluent Amount', severity: 'err' },
   13: { title: 'Rule 13 — Drug Display Order Within Care Area', severity: 'warn' },
   14: { title: 'Rule 14 — Drug Name Spelling Check', severity: 'warn' },
+  15: { title: 'Rule 15 — Mismatched Dose Units (mL Primary with non-mL Bolus/Loading)', severity: 'err' },
 };
 
 function renderResults(issues) {
@@ -1085,6 +1111,12 @@ function renderResults(issues) {
                   const distLabel = i.r14dist === 1 ? '1 letter difference' : `${i.r14dist} letter differences`;
                   issueCell = `<div class="spell-word">${wordHtml}${escHtml(i.r14rest)}</div>
                                <div class="spell-suggest">→ Did you mean <strong>${escHtml(i.r14suggestion)}</strong>? (${distLabel})</div>`;
+                } else if (i.r15pri !== undefined) {
+                  // Rule 15: show both unit values as colored chips
+                  const chipA = `<span class="unit-chip ${i.r15pri.isMl ? 'is-ml' : 'non-ml'}">${escHtml(i.r15pri.value)}</span><span class="unit-chip-label">${escHtml(i.r15pri.label)}</span>`;
+                  const chipB = `<span class="unit-chip ${i.r15sec.isMl ? 'is-ml' : 'non-ml'}">${escHtml(i.r15sec.value)}</span><span class="unit-chip-label">${escHtml(i.r15sec.label)}</span>`;
+                  issueCell = `<div class="unit-chips">${chipA} <span style="color:#9ca3af">vs</span> ${chipB}</div>
+                               <div class="unit-compat-note">mL dose units are only compatible with other mL dose units</div>`;
                 } else {
                   issueCell = `<span class="msg-col">${escHtml(i.msg)}</span>`;
                 }
