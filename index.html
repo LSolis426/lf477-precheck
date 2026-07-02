@@ -136,6 +136,9 @@
   .name-over { background: #fde8e8; color: #b91c1c; font-weight: 700; border-bottom: 2px solid #b91c1c; border-radius: 2px; padding: 0 1px; }
   .name-field-label { font-size: 11px; color: #6a7a8a; margin-bottom: 3px; }
   .name-pct { font-size: 11px; color: #b91c1c; margin-top: 3px; font-weight: 600; }
+  .spell-word { font-family: monospace; font-size: 13px; letter-spacing: 0.4px; margin-bottom: 3px; }
+  .spell-wrong { background: #fef08a; border-radius: 2px; padding: 0 1px; font-weight: 700; }
+  .spell-suggest { font-size: 12px; color: #6b7280; }
 
   .run-btn {
     display: none; margin: 0 auto 24px; padding: 11px 28px; background: #4a6cf7;
@@ -310,6 +313,75 @@ function colLetter(idx) {
     n = Math.floor((n - 1) / 26);
   }
   return col;
+}
+
+// ── Rule 14: Known IV drug reference list (canonical spelling) ───────────────
+const KNOWN_DRUGS_CANONICAL = [
+  // Pharmacist-provided common drugs:
+  'Adenosine','Alprostadil','Alteplase','Amiodarone','Argatroban','Atracurium',
+  'Bivalirudin','Bumetanide','Cisatracurium','Clevidipine','Dexmedetomidine',
+  'Diltiazem','Dobutamine','Dopamine','Epinephrine','Eptifibatide','Esmolol',
+  'Fenoldopam','Fentanyl','Furosemide','Heparin','Hydromorphone','Insulin',
+  'Isoproterenol','Ketamine','Labetalol','Lidocaine','Lorazepam','Midazolam',
+  'Milrinone','Morphine','Naloxone','Nesiritide','Nicardipine','Nitroglycerin',
+  'Nitroprusside','Norepinephrine','Octreotide','Pancuronium','Pantoprazole',
+  'Pentobarbital','Phenylephrine','Procainamide','Propofol','Remifentanil',
+  'Rocuronium','Sufentanil','Vasopressin',
+  // Additional common IV medications:
+  'Acetaminophen','Albumin','Amikacin','Aminophylline','Azithromycin',
+  'Cefazolin','Ceftriaxone','Ciprofloxacin','Clindamycin','Daptomycin',
+  'Dexamethasone','Digoxin','Enalaprilat','Fluconazole','Gentamicin',
+  'Hydralazine','Hydrocortisone','Levofloxacin','Mannitol','Meropenem',
+  'Metoprolol','Metronidazole','Methylprednisolone','Nalbuphine','Nimodipine',
+  'Phenobarbital','Tobramycin','Vancomycin','Vecuronium','Voriconazole',
+];
+// Map: lowercase → canonical (for fast lookup and suggestion display)
+const KNOWN_DRUGS_MAP = new Map(KNOWN_DRUGS_CANONICAL.map(d => [d.toLowerCase(), d]));
+
+// Levenshtein edit distance (optimized: bails early if lengths differ > 3)
+function levenshtein(a, b) {
+  if (Math.abs(a.length - b.length) > 3) return 99;
+  const row = Array.from({length: b.length + 1}, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = row[0];
+    row[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = row[j];
+      row[j] = a[i-1] === b[j-1] ? prev : 1 + Math.min(prev, row[j], row[j-1]);
+      prev = tmp;
+    }
+  }
+  return row[b.length];
+}
+
+// Returns boolean[] marking which positions in `a` are "wrong" relative to `b` (both lowercase).
+// Uses full DP matrix + backtrace so consecutive wrong chars stay grouped.
+function wrongPositions(a, b) {
+  const m = a.length, n = b.length;
+  const dp = Array.from({length: m + 1}, (_, i) =>
+    Array.from({length: n + 1}, (_, j) => i === 0 ? j : j === 0 ? i : 0)
+  );
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1]
+        : 1 + Math.min(dp[i-1][j-1], dp[i-1][j], dp[i][j-1]);
+    }
+  }
+  const wrong = new Array(m).fill(false);
+  let i = m, j = n;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && a[i-1] === b[j-1]) {
+      i--; j--;
+    } else {
+      const sub = (i > 0 && j > 0) ? dp[i-1][j-1] : Infinity;
+      const del = i > 0 ? dp[i-1][j] : Infinity;
+      const ins = j > 0 ? dp[i][j-1] : Infinity;
+      if (sub <= del && sub <= ins) { wrong[--i] = true; j--; }  // substitution
+      else if (del <= ins)          { wrong[--i] = true; }        // deletion (extra char)
+      else                          { j--; }                      // insertion (missing char)
+    }
+  }
+  return wrong;
 }
 
 // Natural sort: compares strings treating embedded digit runs numerically
@@ -622,6 +694,38 @@ function validate(workbook) {
         });
       }
 
+      // ── Rule 14: Drug name spelling ────────────────────────────────────────
+      if (!isEmpty(drugName) && !String(drugName).trim().toLowerCase().startsWith('rate mode')) {
+        const trimmedDrug = String(drugName).trimEnd();
+        // Extract first alphabetic run (handles Tallman lettering like EPINEPHrine, leading spaces)
+        const firstWord = trimmedDrug.trim().match(/^([A-Za-z]{4,})/);
+        if (firstWord) {
+          const normalized = firstWord[1].toLowerCase();
+          if (!KNOWN_DRUGS_MAP.has(normalized)) {
+            // Find the closest known drug by edit distance
+            let bestMatch = null, bestDist = Infinity;
+            for (const [lcName, canonical] of KNOWN_DRUGS_MAP) {
+              const d = levenshtein(normalized, lcName);
+              if (d < bestDist) { bestDist = d; bestMatch = canonical; }
+            }
+            // Flag if within threshold: ≤1 edit for shorter names, ≤2 for names ≥10 chars
+            const threshold = normalized.length >= 10 ? 2 : 1;
+            if (bestMatch && bestDist > 0 && bestDist <= threshold) {
+              const wrong = wrongPositions(normalized, bestMatch.toLowerCase());
+              const rest = trimmedDrug.trim().slice(firstWord[1].length); // suffix after first word
+              allIssues.push({ rule: 14, ...loc,
+                r14word: firstWord[1],   // original-case first word
+                r14wrong: wrong,         // boolean[] marking wrong chars
+                r14rest: rest,           // rest of name after first word (suffix)
+                r14suggestion: bestMatch,
+                r14dist: bestDist,
+                msg: `"${trimmedDrug.trim()}" may be misspelled — did you mean "${bestMatch}"? (${bestDist} letter ${bestDist === 1 ? 'difference' : 'differences'})`,
+              });
+            }
+          }
+        }
+      }
+
     } // end row loop
   } // end sheet loop
 
@@ -720,6 +824,7 @@ const RULE_INFO = {
   11: { title: 'Rule 11 — Time Limit Column Not in hh:mm:ss Format', severity: 'err' },
   12: { title: 'Rule 12 — Conc Unit Filled Without Conc Amount or Diluent Amount', severity: 'err' },
   13: { title: 'Rule 13 — Drug Display Order Within Care Area', severity: 'warn' },
+  14: { title: 'Rule 14 — Drug Name Spelling Check', severity: 'warn' },
 };
 
 function renderResults(issues) {
@@ -974,6 +1079,12 @@ function renderResults(issues) {
                   issueCell = `<div class="name-field-label">${escHtml(i.r9label)}</div>
                                 <div class="name-display">${buildOverflowHtml(i.r9val)}</div>
                                 <div class="name-pct">▲ ${i.r9pct}% of capacity — red characters won't fit on pump screen</div>`;
+                } else if (i.r14word !== undefined) {
+                  // Rule 14: show drug word with yellow highlights on wrong characters
+                  const wordHtml = buildSpellingHtml(i.r14word, i.r14wrong);
+                  const distLabel = i.r14dist === 1 ? '1 letter difference' : `${i.r14dist} letter differences`;
+                  issueCell = `<div class="spell-word">${wordHtml}${escHtml(i.r14rest)}</div>
+                               <div class="spell-suggest">→ Did you mean <strong>${escHtml(i.r14suggestion)}</strong>? (${distLabel})</div>`;
                 } else {
                   issueCell = `<span class="msg-col">${escHtml(i.msg)}</span>`;
                 }
@@ -1026,6 +1137,19 @@ function escHtml(str) {
   return String(str || '')
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/"/g,'&quot;');
+}
+
+// Wraps wrong-position characters in yellow highlight spans.
+// `word` = original-case string, `wrong` = boolean[] from wrongPositions().
+function buildSpellingHtml(word, wrong) {
+  let html = '', inSpan = false;
+  for (let i = 0; i < word.length; i++) {
+    if (wrong[i] && !inSpan)       { html += '<span class="spell-wrong">'; inSpan = true; }
+    if (!wrong[i] && inSpan)       { html += '</span>'; inSpan = false; }
+    html += escHtml(word[i]);
+  }
+  if (inSpan) html += '</span>';
+  return html;
 }
 
 // ─── File handling ────────────────────────────────────────────────────────────
