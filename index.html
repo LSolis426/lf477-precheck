@@ -303,6 +303,15 @@ function isMLUnit(unit) {
   return u === 'ml' || u.startsWith('ml/');
 }
 
+// Rate-based = dose unit ends in a per-minute or per-hour token (e.g. mg/hr, mcg/kg/min)
+function isRateBasedUnit(unit) {
+  if (!unit) return false;
+  const HOUR_TOKENS = ['h', 'hr', 'hour', 'hrs', 'hours'];
+  const MIN_TOKENS = ['m', 'min', 'minute', 'mins', 'minutes'];
+  const lastToken = String(unit).toLowerCase().split('/').pop().trim();
+  return HOUR_TOKENS.includes(lastToken) || MIN_TOKENS.includes(lastToken);
+}
+
 function hasExcessDecimals(val) {
   if (typeof val !== 'number') return false;
   const s = val.toPrecision(15).replace(/0+$/, '');
@@ -539,8 +548,7 @@ function validate(workbook) {
 
       // ── Rule 16: Bolus/Loading fields must be blank if primary unit is not /min or /hr ──
       if (!isEmpty(row[C.PRI_UNIT])) {
-        const priUnit16 = String(row[C.PRI_UNIT]).toLowerCase();
-        const isRateBased = priUnit16.includes('/min') || priUnit16.includes('/hr');
+        const isRateBased = isRateBasedUnit(row[C.PRI_UNIT]);
         if (!isRateBased) {
           const bolCols = [C.BOL_UNIT,C.BOL_INIT,C.BOL_UH,C.BOL_LH,C.BOL_US,C.BOL_LS,C.BOL_T_INIT,C.BOL_T_UH,C.BOL_T_LH,C.BOL_T_US,C.BOL_T_LS];
           const lodCols = [C.LOD_UNIT,C.LOD_INIT,C.LOD_UH,C.LOD_LH,C.LOD_US,C.LOD_LS,C.LOD_T_INIT,C.LOD_T_UH,C.LOD_T_LH,C.LOD_T_US,C.LOD_T_LS];
@@ -726,6 +734,12 @@ function validate(workbook) {
           allIssues.push({ rule: 11, ...loc,
             msg: `Col ${label} contains the value ${v} which exceeds 24 hours — likely entered as a rate (e.g. mL/hr or mcg/hr) from another pump system. Must be converted to hh:mm:ss duration.`
           });
+        } else if (typeof v === 'number' && v <= 0 && idx === C.BOL_T_INIT) {
+          // Bolus Initial Time of 0 is equivalent to leaving it blank — acceptable
+        } else if (typeof v === 'number' && v <= 0 && idx === C.PRI_T_INIT && !isRateBasedUnit(row[C.PRI_UNIT])) {
+          // Primary Initial Time of 0 is acceptable when Primary Dose Unit is not rate-based (/min or /hr)
+        } else if (typeof v === 'number' && v <= 0 && idx === C.LOD_T_INIT && !isRateBasedUnit(row[C.LOD_UNIT])) {
+          // Loading Initial Time of 0 is acceptable when Loading Dose Unit is not rate-based (/min or /hr)
         } else if (typeof v === 'number' && v <= 0) {
           allIssues.push({ rule: 11, ...loc,
             msg: `Col ${label} contains ${v} — must be a positive hh:mm:ss time duration greater than 00:00:00.`
