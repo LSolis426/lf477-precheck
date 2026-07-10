@@ -1,0 +1,6 @@
+Care Area,Drug Name,Dosing Name,Conc Unit,Conc Amount,Pri Dose Unit,Pri Dose,Pri Time
+Adult,Heparin,Standard,unit,25000.0,units/hr,12,00:01:00
+Adult,Insulin,Drip,milliunits,100,milliunits/kg/min,0.5,
+Adult,Bivalirudin ,Standard,mg,250,mg/kg/hr,0.15,
+Adult,Norepinephrine,Central,mcg,4,mcg/min,8,
+Adult,Epinephrine,Peripheral,mcg,1,mcg/min,2,
