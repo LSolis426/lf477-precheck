@@ -116,6 +116,15 @@ When KVO Mode (AT) = `"Rate"` (case-insensitive), KVO Rate (AU) must be present 
 ### Rule 7 — KVO Rate Should Be Blank
 When KVO Mode = `"Off"` or `"Continue Primary Rate"`, KVO Rate (AU) must be empty.
 
+### Rule 17 — KVO Rate Out of Range (universal AU value check)
+Independent of KVO Mode: KVO Rate (AU), *if not blank*, must be a **number between
+0.4 and 20 mL/hr** (inclusive). Flags non-numeric values (e.g. text like `"5 mL/hr"`)
+and numbers outside the range. Blank is always allowed. This complements Rules 6 & 7
+(which are mode-specific) and fills the gaps they miss — e.g. a non-numeric rate under
+Rate mode, or an out-of-range value when Mode is blank or unrecognized. To avoid
+double-reporting, Rule 17 is suppressed on a cell already flagged by Rule 6 (Rate mode,
+numeric out of range) or Rule 7 (Off/Continue with any value).
+
 ### Rule 8 — Weight Outside 0.1–350 kg
 Weight limit columns (AP–AS) must be between 0.1 and 999 kg if filled.
 

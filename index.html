@@ -672,6 +672,7 @@ function validate(workbook) {
       // ── Rules 6 & 7: KVO Mode / KVO Rate ────────────────────────────────
       const kvoMode = row[C.KVO_MODE];
       const kvoRate = row[C.KVO_RATE];
+      let kvoRateAlreadyFlagged = false; // set when Rule 6/7 already flags this cell, so Rule 17 doesn't double-report
       if (!isEmpty(kvoMode)) {
         const km = String(kvoMode).trim().toLowerCase();
         if (km === 'rate') {
@@ -679,11 +680,24 @@ function validate(workbook) {
             allIssues.push({ rule: 6, ...loc, msg: 'KVO Mode is "Rate" but KVO Rate (col AU) is blank — must enter a value between 0.4 and 20 mL/hr' });
           } else if (typeof kvoRate === 'number' && (kvoRate < 0.4 || kvoRate > 20)) {
             allIssues.push({ rule: 6, ...loc, msg: `KVO Mode is "Rate" but KVO Rate ${kvoRate} mL/hr is outside the allowed range of 0.4–20 mL/hr` });
+            kvoRateAlreadyFlagged = true;
           }
         } else if (km === 'off' || km === 'continue primary rate') {
           if (!isEmpty(kvoRate)) {
             allIssues.push({ rule: 7, ...loc, msg: `KVO Mode is "${kvoMode}" — KVO Rate (col AU) must be blank, but has value ${kvoRate}` });
+            kvoRateAlreadyFlagged = true;
           }
+        }
+      }
+
+      // ── Rule 17: KVO Rate (col AU) must be blank or a number between 0.4 and 20 (any mode) ──
+      // Universal value check on the cell, independent of KVO Mode. Skipped when Rule 6/7 already
+      // flagged this same cell, so a single problem isn't reported twice.
+      if (!isEmpty(kvoRate) && !kvoRateAlreadyFlagged) {
+        if (typeof kvoRate !== 'number') {
+          allIssues.push({ rule: 17, ...loc, msg: `KVO Rate (col AU) = "${kvoRate}" is not a number — it must be blank or a number between 0.4 and 20 mL/hr` });
+        } else if (kvoRate < 0.4 || kvoRate > 20) {
+          allIssues.push({ rule: 17, ...loc, msg: `KVO Rate (col AU) = ${kvoRate} is outside the allowed range — it must be blank or a number between 0.4 and 20 mL/hr` });
         }
       }
 
@@ -888,6 +902,7 @@ const RULE_INFO = {
   14: { title: 'Rule 14 — Drug Name Spelling Check', severity: 'warn' },
   15: { title: 'Rule 15 — Mismatched Dose Units (mL Primary with non-mL Bolus/Loading)', severity: 'err' },
   16: { title: 'Rule 16 — Bolus/Loading Fields Filled but Primary Unit is Not Rate-Based (/min or /hr)', severity: 'err' },
+  17: { title: 'Rule 17 — KVO Rate Out of Range (must be blank or a number 0.4–20 mL/hr)', severity: 'err' },
 };
 
 function renderResults(issues) {
