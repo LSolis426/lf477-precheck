@@ -789,6 +789,24 @@ function validate(workbook) {
         }
       }
 
+      // ── Rule 19: Conc Unit (col E) & Diluent Unit (col G) must be letters or blank (no numbers) ──
+      // These are unit columns (e.g. "mg", "mcg", "mL"). A digit here usually means a numeric amount
+      // was entered in the unit column by mistake — the amount belongs in the matching amount column
+      // (F for E, H for G). Mirror of Rule 18.
+      const unitChecks = [
+        { idx: C.CONC_UNIT, label: 'Conc Unit (col E)',    amtCol: 'Conc Amount (col F)' },
+        { idx: C.DIL_UNIT,  label: 'Diluent Unit (col G)', amtCol: 'Diluent Amount (col H)' },
+      ];
+      for (const { idx, label, amtCol } of unitChecks) {
+        const unit = row[idx];
+        if (isEmpty(unit)) continue;
+        if (/\d/.test(String(unit))) {
+          allIssues.push({ rule: 19, ...loc,
+            msg: `${label} = "${unit}" must contain only a unit (letters) or be left blank — it cannot contain numbers. The numeric amount belongs in ${amtCol}.`
+          });
+        }
+      }
+
       // ── Rule 14: Drug name spelling ────────────────────────────────────────
       if (!isEmpty(drugName) && !String(drugName).trim().toLowerCase().startsWith('rate mode')) {
         const trimmedDrug = String(drugName).trimEnd();
@@ -924,6 +942,7 @@ const RULE_INFO = {
   16: { title: 'Rule 16 — Bolus/Loading Fields Filled but Primary Unit is Not Rate-Based (/min or /hr)', severity: 'err' },
   17: { title: 'Rule 17 — KVO Rate Out of Range (must be blank or a number 0.4–20 mL/hr)', severity: 'err' },
   18: { title: 'Rule 18 — Conc Amount (col F) & Diluent Amount (col H) Must Be a Number or Blank (no letters/units)', severity: 'err' },
+  19: { title: 'Rule 19 — Conc Unit (col E) & Diluent Unit (col G) Must Be Letters or Blank (no numbers)', severity: 'err' },
 };
 
 function renderResults(issues) {

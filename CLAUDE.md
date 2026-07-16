@@ -177,6 +177,15 @@ against `MultiCare Corporate 3870 DERS 06.30.26.xlsx`, where PEDIATRIC F5–F8 (
 dexmedeTOMidine) contain `"mcg"` and are correctly flagged, while numeric F/H cells
 elsewhere are not.
 
+### Rule 19 — Conc Unit (col E) & Diluent Unit (col G) Must Be Letters or Blank
+The mirror of Rule 18. Columns E (Conc Unit) and G (Diluent Unit) hold only the unit
+text (e.g. `"mg"`, `"mcg"`, `"mL"`) — each must be blank or contain **no digits**. A
+number in a unit column usually means a numeric amount was entered in the wrong column;
+the amount belongs in the matching amount column (F for E, H for G). Flagged if the cell
+contains any digit 0–9 (`450`, `"5mg"`); allowed if blank or purely non-numeric,
+including slash notation like `"mcg/kg"`. E and G are checked independently. Verified
+against the MultiCare file (all E/G cells are pure-letter units → no false positives).
+
 ### Rule 11 — Time Limit Column Not in hh:mm:ss Format
 Columns O–S (Primary time), Z–AD (Bolus time), AK–AO (Loading time) must contain Excel time values (stored internally as decimal fractions 0–1 representing fractions of a 24-hour day).
 
