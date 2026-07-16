@@ -186,6 +186,26 @@ contains any digit 0–9 (`450`, `"5mg"`); allowed if blank or purely non-numeri
 including slash notation like `"mcg/kg"`. E and G are checked independently. Verified
 against the MultiCare file (all E/G cells are pure-letter units → no false positives).
 
+### Rule 20 — Dosing Name vs Entered Concentration
+Compares the concentration encoded in the Dosing Name (col D) against the entered
+concentration (cols E–H). The dosing name is parsed as `<amt> <unit> / <dilAmt> <dilUnit>`
+(e.g. `"1000 mcg / 250 mL"`; commas and missing spaces like `"100mL"` are tolerated).
+Two outcomes, shown with colored chips in the Issue cell:
+- **RED** (`conc-bad`, counts as an error) — the name and E–H do not match and their **final
+  concentration** (amt ÷ dilAmt) is also different, OR the units differ, OR E–H is not a valid
+  number. Example: name `1000 mcg / 250 mL` vs entered `1000 mcg / 100 mL`.
+- **YELLOW** (`conc-warn`, counts as a warning) — the numbers differ but the **final
+  concentration is the same** (e.g. name `1 mg / 1 mL` vs entered `100 mg / 100 mL`, both
+  1 mg/mL). Flagged as "likely intentional — verify," not a hard error.
+
+Rows are skipped when the dosing name isn't a concentration expression (e.g. `"mL/hr"`), or
+when nothing is entered in E–H. This rule carries a per-issue `severity` (`err`/`warn`) rather
+than a fixed rule severity; the summary counts and section-header color honor it (see
+`i.severity || RULE_INFO[i.rule].severity` in `renderResults`). Verified against
+`MultiCare Corporate 3870 DERS 06.30.26.xlsx`: correctly flags PEDIATRIC row 8 (dexmedeTOMidine,
+250 mL name vs 100 mL entered) and ADULT row 13 (DOPamine, 250 mL vs 270 mL) as red, with no
+false positives on matching rows.
+
 ### Rule 11 — Time Limit Column Not in hh:mm:ss Format
 Columns O–S (Primary time), Z–AD (Bolus time), AK–AO (Loading time) must contain Excel time values (stored internally as decimal fractions 0–1 representing fractions of a 24-hour day).
 

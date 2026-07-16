@@ -145,6 +145,11 @@
   .unit-chip.non-ml { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
   .unit-chip-label { font-size: 11px; color: #6b7280; }
   .unit-compat-note { font-size: 12px; color: #6b7280; }
+  /* Rule 20 concentration comparison chips */
+  .conc-chip { display: inline-block; font-family: monospace; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 4px; letter-spacing: 0.3px; }
+  .conc-name { background: #eef2ff; color: #3730a3; border: 1px solid #c7d2fe; }
+  .conc-bad  { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+  .conc-warn { background: #fef9c3; color: #854d0e; border: 1px solid #fde047; }
 
   .run-btn {
     display: none; margin: 0 auto 24px; padding: 11px 28px; background: #4a6cf7;
@@ -807,6 +812,59 @@ function validate(workbook) {
         }
       }
 
+      // ── Rule 20: Dosing Name (col D) concentration vs entered concentration (cols E–H) ──
+      // The dosing name usually encodes a concentration as "<amt> <unit> / <dilAmt> <dilUnit>"
+      // (e.g. "1000 mcg / 250 mL"). Compare it against the entered E/F/G/H values:
+      //   • RED    — they do not match and the final concentration (amt ÷ dilAmt) is also different.
+      //   • YELLOW — the numbers differ but the final concentration is the SAME
+      //              (e.g. name "1 mg / 1 mL" vs entered "100 mg / 100 mL").
+      // Rows whose dosing name isn't a concentration, or with nothing entered in E–H, are skipped.
+      (function checkRule20(){
+        if (isEmpty(dosingName)) return;
+        const m = String(dosingName).trim().match(/^([\d.,]+)\s*([A-Za-z]+)\s*\/\s*([\d.,]+)\s*([A-Za-z]+)$/);
+        if (!m) return; // dosing name is not a "amount unit / amount unit" concentration
+        const toNum = s => { const n = parseFloat(String(s).replace(/,/g,'')); return isFinite(n) ? n : NaN; };
+        const nAmt = toNum(m[1]), nUnit = m[2], nDil = toNum(m[3]), nDilUnit = m[4];
+        if (!isFinite(nAmt) || !isFinite(nDil)) return;
+
+        const cAmtRaw = row[C.CONC_AMT], cUnit = row[C.CONC_UNIT], cDilRaw = row[C.DIL_AMT], cDilUnit = row[C.DIL_UNIT];
+        if (isEmpty(cAmtRaw) && isEmpty(cDilRaw) && isEmpty(cUnit) && isEmpty(cDilUnit)) return; // nothing entered — skip
+
+        const cAmt = toNum(cAmtRaw), cDil = toNum(cDilRaw);
+        const eqStr = (a,b) => String(a==null?'':a).trim().toLowerCase() === String(b==null?'':b).trim().toLowerCase();
+        // Units are consistent unless a present col unit contradicts the name (blank col unit is tolerated)
+        const unitOk = (isEmpty(cUnit) || eqStr(nUnit, cUnit)) && (isEmpty(cDilUnit) || eqStr(nDilUnit, cDilUnit));
+        const amountsEqual = isFinite(cAmt) && isFinite(cDil) && cAmt === nAmt && cDil === nDil;
+        if (amountsEqual && unitOk) return; // full match — nothing to flag
+
+        const cleanNum = s => String(s).replace(/,/g,'');
+        const nameStr = `${cleanNum(m[1])} ${nUnit} / ${cleanNum(m[3])} ${nDilUnit}`;
+        const cell = v => (v==null || v==='') ? '(blank)' : String(v);
+        const enteredStr = `${cell(cAmtRaw)} ${cell(cUnit)} / ${cell(cDilRaw)} ${cell(cDilUnit)}`;
+
+        // Same final concentration? numbers differ but amt÷dilAmt ratio matches, with consistent units
+        let sameEnd = false, ratioTxt = '';
+        if (unitOk && isFinite(cAmt) && isFinite(cDil) && nDil !== 0 && cDil !== 0) {
+          const rn = nAmt / nDil, rc = cAmt / cDil;
+          sameEnd = Math.abs(rn - rc) <= 1e-9 * Math.max(1, Math.abs(rn), Math.abs(rc));
+          ratioTxt = `${+rn.toFixed(6)} ${nUnit}/${nDilUnit}`;
+        }
+
+        if (sameEnd) {
+          allIssues.push({ rule: 20, ...loc, severity: 'warn',
+            r20: { kind: 'yellow', name: nameStr, entered: enteredStr,
+              note: `Different numbers, but the final concentration is the same (${ratioTxt}). Likely intentional — verify.` },
+            msg: `Dosing Name "${nameStr}" vs entered "${enteredStr}" — different numbers, same final concentration.`
+          });
+        } else {
+          allIssues.push({ rule: 20, ...loc, severity: 'err',
+            r20: { kind: 'red', name: nameStr, entered: enteredStr,
+              note: `The dosing name and the entered concentration (cols E–H) do not match. Correct one so they agree.` },
+            msg: `Dosing Name "${nameStr}" does not match entered concentration "${enteredStr}".`
+          });
+        }
+      })();
+
       // ── Rule 14: Drug name spelling ────────────────────────────────────────
       if (!isEmpty(drugName) && !String(drugName).trim().toLowerCase().startsWith('rate mode')) {
         const trimmedDrug = String(drugName).trimEnd();
@@ -943,6 +1001,7 @@ const RULE_INFO = {
   17: { title: 'Rule 17 — KVO Rate Out of Range (must be blank or a number 0.4–20 mL/hr)', severity: 'err' },
   18: { title: 'Rule 18 — Conc Amount (col F) & Diluent Amount (col H) Must Be a Number or Blank (no letters/units)', severity: 'err' },
   19: { title: 'Rule 19 — Conc Unit (col E) & Diluent Unit (col G) Must Be Letters or Blank (no numbers)', severity: 'err' },
+  20: { title: 'Rule 20 — Dosing Name vs Entered Concentration (red = no match, yellow = same final concentration)', severity: 'err' },
 };
 
 function renderResults(issues) {
@@ -958,8 +1017,8 @@ function renderResults(issues) {
 
   // For Rule 1 dup_groups, count total flagged rows (sum of locs.length) for the summary
   const totalIssues = issues.reduce((sum, i) => sum + (i.type === 'dup_group' ? i.locs.length : 1), 0);
-  const errCount = issues.reduce((sum, i) => sum + (RULE_INFO[i.rule].severity === 'err' ? (i.type === 'dup_group' ? i.locs.length : 1) : 0), 0);
-  const warnCount = issues.reduce((sum, i) => sum + (RULE_INFO[i.rule].severity === 'warn' ? (i.type === 'dup_group' ? i.locs.length : 1) : 0), 0);
+  const errCount = issues.reduce((sum, i) => sum + ((i.severity || RULE_INFO[i.rule].severity) === 'err' ? (i.type === 'dup_group' ? i.locs.length : 1) : 0), 0);
+  const warnCount = issues.reduce((sum, i) => sum + ((i.severity || RULE_INFO[i.rule].severity) === 'warn' ? (i.type === 'dup_group' ? i.locs.length : 1) : 0), 0);
   const rulesClear = Object.keys(RULE_INFO).length - new Set(issues.map(i => i.rule)).size;
 
   summaryGrid.innerHTML = `
@@ -1000,7 +1059,13 @@ function renderResults(issues) {
     const section = document.createElement('div');
     section.className = 'section';
 
-    const headerClass = ruleIssues.length === 0 ? 'rule-ok' : (info.severity === 'warn' ? 'rule-warn' : 'rule-err');
+    // Effective severity: if issues carry their own severity (e.g. Rule 20 red/yellow),
+    // the header is red when any is an error, else amber.
+    let sevForHeader = info.severity;
+    if (ruleIssues.length && ruleIssues.some(i => i.severity)) {
+      sevForHeader = ruleIssues.some(i => (i.severity || info.severity) === 'err') ? 'err' : 'warn';
+    }
+    const headerClass = ruleIssues.length === 0 ? 'rule-ok' : (sevForHeader === 'warn' ? 'rule-warn' : 'rule-err');
     const badgeText = ruleIssues.length === 0
       ? '✓ Clear'
       : Number(ruleNum) === 1
@@ -1217,6 +1282,16 @@ function renderResults(issues) {
                   ).join(' ');
                   issueCell = `<div class="unit-chips">${priChip} ${secChips}</div>
                                <div class="unit-compat-note">Bolus and loading infusions are disabled on the pump when Primary Dose Unit is not /min or /hr (columns T–AO must be blank)</div>`;
+                } else if (i.r20) {
+                  // Rule 20: dosing-name concentration vs entered concentration, red or yellow
+                  const kindClass = i.r20.kind === 'red' ? 'conc-bad' : 'conc-warn';
+                  issueCell = `<div class="unit-chips">
+                                 <span class="unit-chip-label">Dosing Name (D):</span>
+                                 <span class="conc-chip conc-name">${escHtml(i.r20.name)}</span>
+                                 <span style="color:#9ca3af">vs entered (E–H):</span>
+                                 <span class="conc-chip ${kindClass}">${escHtml(i.r20.entered)}</span>
+                               </div>
+                               <div class="unit-compat-note">${escHtml(i.r20.note)}</div>`;
                 } else {
                   issueCell = `<span class="msg-col">${escHtml(i.msg)}</span>`;
                 }
