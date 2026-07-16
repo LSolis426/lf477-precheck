@@ -165,14 +165,16 @@ Display: side-by-side "Template entry order" vs "Pump will show (alphabetical)",
 ### Rule 12 — Conc Unit Filled Without Numeric Concentration Values
 If Conc Amount (F) and Diluent Amount (H) are both blank, Conc Unit (E) must also be blank. When a pharmacist intends a wildcard concentration (any concentration allowed), all three fields should be empty. A unit in E with no numbers in F/H is an incomplete entry.
 
-### Rule 18 — Conc Amount (col F) Must Be a Number or Blank
-Column F (Conc Amount) holds only the numeric concentration amount — it must be a
-number, or left blank. Any letters/units in F (e.g. `"mcg"`) are a data-entry error:
-the unit belongs in Conc Unit (col E), not F. A value is accepted if it is a numeric
+### Rule 18 — Conc Amount (col F) & Diluent Amount (col H) Must Be a Number or Blank
+Columns F (Conc Amount) and H (Diluent Amount) hold only numeric amounts — each must be
+a number, or left blank. Any letters/units in them (e.g. `"mcg"` in F, `"mL"` in H) are a
+data-entry error: the unit belongs in the matching unit column (Conc Unit col E for F,
+Diluent Unit col G for H), not the amount column. A value is accepted if it is a numeric
 cell or a plain numeric string (`450`, `0.5`); it is flagged if it contains letters or
-other non-numeric text (`"mcg"`, `"5 mcg"`). Blank is always allowed. Verified against
-`MultiCare Corporate 3870 DERS 06.30.26.xlsx`, where PEDIATRIC F5–F8 (PEDS
-dexmedeTOMidine) contain `"mcg"` and are correctly flagged, while numeric F cells
+other non-numeric text (`"mcg"`, `"5 mcg"`). Blank is always allowed; F and H are checked
+independently (a bad F and a bad H on the same row produce two separate flags). Verified
+against `MultiCare Corporate 3870 DERS 06.30.26.xlsx`, where PEDIATRIC F5–F8 (PEDS
+dexmedeTOMidine) contain `"mcg"` and are correctly flagged, while numeric F/H cells
 elsewhere are not.
 
 ### Rule 11 — Time Limit Column Not in hh:mm:ss Format

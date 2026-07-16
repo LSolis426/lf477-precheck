@@ -769,17 +769,22 @@ function validate(workbook) {
         });
       }
 
-      // ── Rule 18: Conc Amount (col F) must be a number or blank (no letters/units) ──
-      // Column F holds the numeric concentration amount. Text like "mcg" belongs in
-      // Conc Unit (col E), not here — a letter/unit value in F is a data-entry error.
-      const concAmt = row[C.CONC_AMT];
-      if (!isEmpty(concAmt)) {
-        const concAmtIsNumber = typeof concAmt === 'number'
-          ? isFinite(concAmt)
-          : /^[+-]?(\d+\.?\d*|\.\d+)$/.test(String(concAmt).trim());
-        if (!concAmtIsNumber) {
+      // ── Rule 18: Conc Amount (col F) & Diluent Amount (col H) must be a number or blank ──
+      // These columns hold numeric amounts only. Text like "mcg" or "mL" belongs in the matching
+      // unit column (E for F, G for H) — a letter/unit value in an amount column is a data-entry error.
+      const amountChecks = [
+        { idx: C.CONC_AMT, label: 'Conc Amount (col F)',    unitCol: 'Conc Unit (col E)' },
+        { idx: C.DIL_AMT,  label: 'Diluent Amount (col H)', unitCol: 'Diluent Unit (col G)' },
+      ];
+      for (const { idx, label, unitCol } of amountChecks) {
+        const amt = row[idx];
+        if (isEmpty(amt)) continue;
+        const amtIsNumber = typeof amt === 'number'
+          ? isFinite(amt)
+          : /^[+-]?(\d+\.?\d*|\.\d+)$/.test(String(amt).trim());
+        if (!amtIsNumber) {
           allIssues.push({ rule: 18, ...loc,
-            msg: `Conc Amount (col F) = "${concAmt}" must be a number or left blank — it cannot contain letters or units (e.g. "mcg"). The unit belongs in Conc Unit (col E).`
+            msg: `${label} = "${amt}" must be a number or left blank — it cannot contain letters or units (e.g. "mcg", "mL"). The unit belongs in ${unitCol}.`
           });
         }
       }
@@ -918,7 +923,7 @@ const RULE_INFO = {
   15: { title: 'Rule 15 — Mismatched Dose Units (mL Primary with non-mL Bolus/Loading)', severity: 'err' },
   16: { title: 'Rule 16 — Bolus/Loading Fields Filled but Primary Unit is Not Rate-Based (/min or /hr)', severity: 'err' },
   17: { title: 'Rule 17 — KVO Rate Out of Range (must be blank or a number 0.4–20 mL/hr)', severity: 'err' },
-  18: { title: 'Rule 18 — Conc Amount (col F) Must Be a Number or Blank (no letters/units)', severity: 'err' },
+  18: { title: 'Rule 18 — Conc Amount (col F) & Diluent Amount (col H) Must Be a Number or Blank (no letters/units)', severity: 'err' },
 };
 
 function renderResults(issues) {
