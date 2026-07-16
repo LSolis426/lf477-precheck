@@ -206,6 +206,25 @@ than a fixed rule severity; the summary counts and section-header color honor it
 250 mL name vs 100 mL entered) and ADULT row 13 (DOPamine, 250 mL vs 270 mL) as red, with no
 false positives on matching rows.
 
+### Rule 21 — Dose Unit & KVO Mode Columns Must Be Letters or Blank
+Columns I (Primary Dose Unit), T (Bolus Dose Unit), AE (Loading Dose Unit), and AT (KVO
+Mode) hold unit/mode text (e.g. `"mcg/kg/min"`, `"mL/hr"`, `"Continue Primary Rate"`) — each
+must be blank or contain **no digits**. A number here usually means a numeric value was
+entered in the wrong column. Slash notation and spaces are fine; only digits `0–9` are
+flagged. (Note: assumes no body-surface-area units like `mcg/m2` — confirmed not used by
+this site. If that changes, exclude the `m2`/`m²` pattern.) Blank is allowed; required-ness
+of I and AT is handled separately by Rule 5.
+
+### Rule 22 — Dose / Limit / Weight Columns Must Be Numbers or Blank
+Columns J–N (Primary dose + limits), U–Y (Bolus), AF–AJ (Loading), and AP–AS (Weight limits)
+must each be a number or left blank — no letters. Accepts numeric cells and plain numeric
+strings; flags any value containing letters. **Deliberately excludes** the time columns
+(O–S, Z–AD, AK–AO) and KVO Rate (AU), which are already validated as numeric by Rule 11 and
+Rule 17 respectively — this avoids double-reporting. Together, Rules 21 + 22 give every
+unit/mode column a letters-only guard and every dose/limit/weight column a numbers-only
+guard. Verified against the MultiCare file (0 false positives) and synthetic cases confirming
+letters in a time column report only under Rule 11, and in AU only under Rule 17.
+
 ### Rule 11 — Time Limit Column Not in hh:mm:ss Format
 Columns O–S (Primary time), Z–AD (Bolus time), AK–AO (Loading time) must contain Excel time values (stored internally as decimal fractions 0–1 representing fractions of a 24-hour day).
 

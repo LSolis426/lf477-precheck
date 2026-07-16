@@ -865,6 +865,53 @@ function validate(workbook) {
         }
       })();
 
+      // ── Rule 21: Dose Unit & KVO Mode columns (I, T, AE, AT) must be letters or blank (no numbers) ──
+      // These hold unit/mode text (e.g. "mcg/kg/min", "mL/hr", "Continue Primary Rate"). A digit here
+      // usually means a numeric value was entered in the wrong column.
+      const letterOnlyChecks = [
+        { idx: C.PRI_UNIT, label: 'Primary Dose Unit (col I)' },
+        { idx: C.BOL_UNIT, label: 'Bolus Dose Unit (col T)' },
+        { idx: C.LOD_UNIT, label: 'Loading Dose Unit (col AE)' },
+        { idx: C.KVO_MODE, label: 'KVO Mode (col AT)' },
+      ];
+      for (const { idx, label } of letterOnlyChecks) {
+        const v = row[idx];
+        if (isEmpty(v)) continue;
+        if (/\d/.test(String(v))) {
+          allIssues.push({ rule: 21, ...loc,
+            msg: `${label} = "${v}" must contain only text (letters) or be left blank — it cannot contain numbers.`
+          });
+        }
+      }
+
+      // ── Rule 22: Dose / limit / weight columns must be a number or blank (no letters) ──
+      // Covers J–N (Primary), U–Y (Bolus), AF–AJ (Loading), AP–AS (Weight). Time columns
+      // (O–S, Z–AD, AK–AO) are validated by Rule 11 and KVO Rate (AU) by Rule 17, so they are
+      // excluded here to avoid double-reporting.
+      const numberOnlyChecks = [
+        [C.PRI_INIT,'Primary Initial Dose (col J)'], [C.PRI_UH,'Primary Upper Hard (col K)'],
+        [C.PRI_LH,'Primary Lower Hard (col L)'], [C.PRI_US,'Primary Upper Soft (col M)'],
+        [C.PRI_LS,'Primary Lower Soft (col N)'],
+        [C.BOL_INIT,'Bolus Initial Dose (col U)'], [C.BOL_UH,'Bolus Upper Hard (col V)'],
+        [C.BOL_LH,'Bolus Lower Hard (col W)'], [C.BOL_US,'Bolus Upper Soft (col X)'],
+        [C.BOL_LS,'Bolus Lower Soft (col Y)'],
+        [C.LOD_INIT,'Loading Initial Dose (col AF)'], [C.LOD_UH,'Loading Upper Hard (col AG)'],
+        [C.LOD_LH,'Loading Lower Hard (col AH)'], [C.LOD_US,'Loading Upper Soft (col AI)'],
+        [C.LOD_LS,'Loading Lower Soft (col AJ)'],
+        [C.WT_UH,'Weight Upper Hard (col AP)'], [C.WT_LH,'Weight Lower Hard (col AQ)'],
+        [C.WT_US,'Weight Upper Soft (col AR)'], [C.WT_LS,'Weight Lower Soft (col AS)'],
+      ];
+      for (const [idx, label] of numberOnlyChecks) {
+        const v = row[idx];
+        if (isEmpty(v)) continue;
+        const isNum = typeof v === 'number' ? isFinite(v) : /^[+-]?(\d+\.?\d*|\.\d+)$/.test(String(v).trim());
+        if (!isNum) {
+          allIssues.push({ rule: 22, ...loc,
+            msg: `${label} = "${v}" must be a number or left blank — it cannot contain letters.`
+          });
+        }
+      }
+
       // ── Rule 14: Drug name spelling ────────────────────────────────────────
       if (!isEmpty(drugName) && !String(drugName).trim().toLowerCase().startsWith('rate mode')) {
         const trimmedDrug = String(drugName).trimEnd();
@@ -1002,6 +1049,8 @@ const RULE_INFO = {
   18: { title: 'Rule 18 — Conc Amount (col F) & Diluent Amount (col H) Must Be a Number or Blank (no letters/units)', severity: 'err' },
   19: { title: 'Rule 19 — Conc Unit (col E) & Diluent Unit (col G) Must Be Letters or Blank (no numbers)', severity: 'err' },
   20: { title: 'Rule 20 — Dosing Name vs Entered Concentration (red = no match, yellow = same final concentration)', severity: 'err' },
+  21: { title: 'Rule 21 — Dose Unit & KVO Mode (cols I, T, AE, AT) Must Be Letters or Blank (no numbers)', severity: 'err' },
+  22: { title: 'Rule 22 — Dose/Limit/Weight Columns (J–N, U–Y, AF–AJ, AP–AS) Must Be Numbers or Blank (no letters)', severity: 'err' },
 };
 
 function renderResults(issues) {
