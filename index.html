@@ -769,6 +769,21 @@ function validate(workbook) {
         });
       }
 
+      // ── Rule 18: Conc Amount (col F) must be a number or blank (no letters/units) ──
+      // Column F holds the numeric concentration amount. Text like "mcg" belongs in
+      // Conc Unit (col E), not here — a letter/unit value in F is a data-entry error.
+      const concAmt = row[C.CONC_AMT];
+      if (!isEmpty(concAmt)) {
+        const concAmtIsNumber = typeof concAmt === 'number'
+          ? isFinite(concAmt)
+          : /^[+-]?(\d+\.?\d*|\.\d+)$/.test(String(concAmt).trim());
+        if (!concAmtIsNumber) {
+          allIssues.push({ rule: 18, ...loc,
+            msg: `Conc Amount (col F) = "${concAmt}" must be a number or left blank — it cannot contain letters or units (e.g. "mcg"). The unit belongs in Conc Unit (col E).`
+          });
+        }
+      }
+
       // ── Rule 14: Drug name spelling ────────────────────────────────────────
       if (!isEmpty(drugName) && !String(drugName).trim().toLowerCase().startsWith('rate mode')) {
         const trimmedDrug = String(drugName).trimEnd();
@@ -903,6 +918,7 @@ const RULE_INFO = {
   15: { title: 'Rule 15 — Mismatched Dose Units (mL Primary with non-mL Bolus/Loading)', severity: 'err' },
   16: { title: 'Rule 16 — Bolus/Loading Fields Filled but Primary Unit is Not Rate-Based (/min or /hr)', severity: 'err' },
   17: { title: 'Rule 17 — KVO Rate Out of Range (must be blank or a number 0.4–20 mL/hr)', severity: 'err' },
+  18: { title: 'Rule 18 — Conc Amount (col F) Must Be a Number or Blank (no letters/units)', severity: 'err' },
 };
 
 function renderResults(issues) {
