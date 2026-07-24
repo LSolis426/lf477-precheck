@@ -983,12 +983,36 @@ function validate(workbook) {
 
     // Entries that appear earlier in the template than the pump would place them.
     // These would benefit from a leading space/symbol to preserve the intended order.
+    // (Fallback hint, used when the number-padding plan below doesn't apply.)
     const needsFix = entries
       .map((e, templateIdx) => {
         const alphaIdx = alphaKeys.indexOf(e.dosing);
         return templateIdx < alphaIdx ? e : null;
       })
       .filter(Boolean);
+
+    // Preferred fix for number-based dosing names: left-pad shorter numbers with leading
+    // spaces so every leading number is the same width (e.g. "1"/"2" → " 1"/" 2" to match
+    // "10"). That makes the pump's character sort equal the intended numeric order. Only
+    // used if it PROVABLY reproduces the template order (verified via pumpCompare); otherwise
+    // we fall back to `needsFix`. This avoids the naive one-space hint that backfires when
+    // numbers have different digit-lengths (e.g. a space before "2" alone gives 2, 1, 10).
+    let fixPlan = null;        // [{ dosing, spaces, row }] items needing leading space(s), or null
+    let fixResultOrder = null; // leading numbers in the resulting (fixed) order, for the message
+    (function computeFixPlan(){
+      const lead = s => { const m = String(s).match(/^\s*(\d+)/); return m ? m[1] : null; };
+      const nums = entries.map(e => lead(e.dosing));
+      if (!nums.every(Boolean)) return;                 // not all number-leading → fallback
+      const maxDigits = Math.max(...nums.map(n => n.length));
+      const plan = entries.map((e, i) => ({ dosing: e.dosing, row: e.row, spaces: maxDigits - nums[i].length }));
+      const padded = entries.map((e, i) => ' '.repeat(plan[i].spaces) + e.dosing);
+      const order = padded.map((_, i) => i).sort((a, b) => pumpCompare(padded[a], padded[b]));
+      if (!order.every((origIdx, pos) => origIdx === pos)) return; // padding doesn't fix it → fallback
+      const toAdd = plan.filter(p => p.spaces > 0);
+      if (toAdd.length === 0) return;
+      fixPlan = toAdd;
+      fixResultOrder = entries.map(e => lead(e.dosing));
+    })();
 
     allIssues.push({
       rule: 10,
@@ -1000,6 +1024,8 @@ function validate(workbook) {
       hasInversion,
       symbolEntries,
       needsFix,
+      fixPlan,        // preferred number-padding fix (or null)
+      fixResultOrder, // leading numbers in fixed order (or null)
     });
   }
 
@@ -1170,15 +1196,18 @@ function renderResults(issues) {
         const groupsHtml = ruleIssues.map(issue => {
           const alphaKeys    = issue.alphaOrder.map(e => e.dosing);
           const templateKeys = issue.entries.map(e => e.dosing);
-          const fixNames     = issue.needsFix.map(e => e.dosing);
+          // Prefer the number-padding fix plan (spaces per item); fall back to the one-space hint.
+          const spacesByDosing = {};
+          if (issue.fixPlan) issue.fixPlan.forEach(p => { spacesByDosing[p.dosing] = p.spaces; });
+          else issue.needsFix.forEach(e => { spacesByDosing[e.dosing] = 1; });
 
           // Build template-order column (left) — highlight entries that pump will reorder
           const templateRows = issue.entries.map((e, ti) => {
             const pi = alphaKeys.indexOf(e.dosing);
             const moved = pi !== ti;
-            const needsSpace = fixNames.includes(e.dosing);
-            const spaceHtml = needsSpace
-              ? `<span class="space-indicator" title="Add a leading space before this name so it sorts earlier on the pump"></span>`
+            const nSpaces = spacesByDosing[e.dosing] || 0;
+            const spaceHtml = nSpaces > 0
+              ? Array.from({length: nSpaces}, () => `<span class="space-indicator" title="Add a leading space before this name so the pump sorts it correctly"></span>`).join('')
               : '';
             return `<div class="ord-entry ${moved ? 'moved' : 'same'}">${spaceHtml}${escHtml(e.dosing)}<span class="row-chip">Row ${e.row}</span></div>`;
           }).join('');
@@ -1192,8 +1221,16 @@ function renderResults(issues) {
 
           // Fix recommendation
           let fixHtml = '';
-          if (fixNames.length > 0) {
-            const fixList = fixNames.map(n => `"${escHtml(n)}"`).join(', ');
+          if (issue.fixPlan) {
+            // Number-padding fix: list each item and how many leading spaces to add, plus the resulting order.
+            const parts = issue.fixPlan.map(p =>
+              `${p.spaces} leading space${p.spaces !== 1 ? 's' : ''} before "${escHtml(p.dosing)}"`);
+            const list = parts.length === 1 ? parts[0]
+              : parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
+            const resultTxt = issue.fixResultOrder ? ` The pump will then show them in order: ${escHtml(issue.fixResultOrder.join(', '))}.` : '';
+            fixHtml = `<div class="ord-fix">💡 <strong>Fix:</strong> Add ${list} so every number is the same width (this lines the numbers up so the pump sorts them numerically).${resultTxt}</div>`;
+          } else if (issue.needsFix.length > 0) {
+            const fixList = issue.needsFix.map(e => `"${escHtml(e.dosing)}"`).join(', ');
             fixHtml = `<div class="ord-fix">💡 <strong>Fix:</strong> Add a leading space or symbol before ${fixList} to move it earlier in the pump's alphabetical display.</div>`;
           }
 
