@@ -158,17 +158,25 @@ If they differ, a purple-bordered box shows both columns side by side. Entries t
 Also flags any dosing name starting with a non-alphanumeric character (floats before A–Z).
 
 **Fix recommendation — number-width padding (`fixPlan`).** For number-based dosing names, the
-recommended fix is to **left-pad the shorter numbers with leading spaces so every leading number
-is the same digit-width** — because the pump sorts characters left-to-right and space (code 32)
-sorts before digits, equal-width numbers then sort in numeric order. Example: `1 mg/mL`, `2 mg/mL`,
-`10 mg/mL` → the pump shows 1, **10, 2**; padding the single digits (` 1`, ` 2`, `10`) makes it
-show 1, 2, 10. Critically, a leading space on **only** the flagged item backfires when digit-widths
-differ (a space before `2` alone → 2, 1, 10; a space before `1` alone → still 1, 10, 2) — you must
-pad **all** the shorter numbers. The engine computes `fixPlan` = the per-item space counts, but only
-after **verifying** (via `pumpCompare`) that the padding actually reproduces the template order; if
-the names aren't all number-leading, or padding doesn't reproduce the intended order, it falls back
-to the older one-space `needsFix` hint. Each item's space-count is shown as that many yellow dashed
-boxes, and the Fix text lists every item + the resulting order.
+recommended fix is to **pad the shorter numbers with spaces so every number is the same digit-width**
+— because the pump sorts characters left-to-right and space (code 32) sorts before digits, equal-width
+numbers then sort in numeric order. Example: `1 mg/mL`, `2 mg/mL`, `10 mg/mL` → the pump shows 1,
+**10, 2**; padding the single digits (` 1`, ` 2`, `10`) makes it show 1, 2, 10.
+
+The number need NOT be at the start of the string. Each name is parsed as `<non-digit prefix><number>`
+(e.g. prefix `""` for `16 mcg/mL`, or `" Wt Based: "` for ` Wt Based: 16 mcg/mL`), and numbers are
+padded to equal width **within each identical-prefix group**, inserting the space(s) **right before the
+number** — so a group like ` Wt Based: 16/32/128` and `Non-Wt: 16/32/128` gets a space before the
+16s and 32s (→ ` 16`, ` 32`, `128`) within each prefix, and each prefix group stays together.
+
+Critically, a single space at the FRONT of the flagged items backfires when there's a text prefix (it
+reshuffles across groups) or when digit-widths differ (space before `2` alone → 2, 1, 10). The engine
+computes `fixPlan` = per-item `{spaces, at}` (how many spaces, and the character offset to insert them,
+i.e. before the number), but only after **verifying** via `pumpCompare` that applying it actually
+reproduces the template order. If any name has no number, or padding doesn't reproduce the intended
+order, it falls back to the older one-space `needsFix` hint. In the UI, the yellow dashed space box(es)
+are rendered at the insertion point (before the number), and the Fix text lists each item + the count;
+for pure number-leading groups it also shows the resulting numeric order.
 
 ### Rule 13 — Drug Display Order Within Care Area
 Within each care area (sheet + col B), the pump displays drug names in alphabetical order regardless of template entry order. This rule flags care areas where the pump's alphabetical order would differ from the order drugs were entered, so pharmacists can see what the pump will actually show.
