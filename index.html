@@ -271,10 +271,11 @@ const UC = {A:20,B:19,C:20,D:17,E:22,F:24,G:17,H:16,I:31,J:31,K:20,L:24,M:13,N:1
 
 // Rule 9 fit threshold: fillRatio above this is flagged as too long for the pump display field.
 // Calibrated from confirmed pump behavior — see the confirmed fit/overflow data points below.
-// 2026 update: raised 1.13 → 1.18 after " Wt Based: 0.075 mg/mL" (ratio 1.134, with a leading space)
-// was confirmed to FIT in the pump emulator. 1.18 sits midway between that confirmed fit and the
-// lowest confirmed overflow ("NORepinephrine mcg/kg/min", ratio 1.232), which stays flagged.
-const NAME_FIT_THRESHOLD = 1.18;
+// 2026 update: raised 1.13 → 1.20. Emulator confirmed " Wt Based: 0.075 mg/mL" (1.134) fits, and
+// even with an extra character (" Wt Based: 0.075 mg/mLa", 1.176) it still fits. 1.20 sits midway
+// between that highest confirmed fit (1.176) and the lowest confirmed overflow
+// ("NORepinephrine mcg/kg/min", 1.232), which stays flagged.
+const NAME_FIT_THRESHOLD = 1.20;
 
 function fillRatio(str) {
   let r = 0;
@@ -289,8 +290,8 @@ function fillRatio(str) {
 // Returns HTML with the characters that push the name past the display limit highlighted in red.
 // Split point uses NAME_FIT_THRESHOLD. Confirmed fits (actual pump screen / emulator):
 //   "EPINEPHrine mcg/kg/min" 1.077, "NORepinephrine mcg/min" 1.086, "NORepinephrine mcg/kg/" 1.073,
-//   "NORepinephri mcg/kg/mn" 1.104, " Wt Based: 0.075 mg/mL" 1.134 (emulator-confirmed) — all fit.
-//   Threshold 1.18; "NORepinephrine mcg/kg/min" (1.232) still overflows and splits correctly at '/'.
+//   "NORepinephri mcg/kg/mn" 1.104, " Wt Based: 0.075 mg/mLa" 1.176 (emulator-confirmed) — all fit.
+//   Threshold 1.20; "NORepinephrine mcg/kg/min" (1.232) still overflows and splits correctly at '/'.
 // Names flagged by Rule 9 always have ratio > NAME_FIT_THRESHOLD, so splitIdx is always found.
 function buildOverflowHtml(str) {
   const SPLIT_THRESHOLD = NAME_FIT_THRESHOLD;
