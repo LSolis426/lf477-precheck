@@ -248,6 +248,18 @@ unit/mode column a letters-only guard and every dose/limit/weight column a numbe
 guard. Verified against the MultiCare file (0 false positives) and synthetic cases confirming
 letters in a time column report only under Rule 11, and in AU only under Rule 17.
 
+### Rule 23 — Possible Misspelling of "min" in a Dose Unit
+Rate-based dose units end in a time token — `min` or `hr` (e.g. `mcg/kg/min`, `mL/hr`). This rule
+takes the last `/`-separated segment of each dose-unit column (I = Primary, T = Bolus, AE = Loading)
+and flags it when it looks like a typo of **min**: either one edit away (`levenshtein(tok,'min')===1`,
+e.g. `kin`, `mim`, `mn`) or a transposition/anagram of the letters m-i-n (e.g. `mni`). Valid time
+tokens (`min`, `mins`, `minute(s)`, `hr`, `hour(s)`, `m`, `h`) and legitimate non-time units (`mg`,
+`mL`, `mcg`, `kg`, `units`, …) are left alone — those are ≥2 edits from `min`, so no false positives.
+Edit distance is capped at 1 deliberately: distance-2 would false-flag real units like `mg`. Verified
+against the Connecticut Children's file, where it correctly flags exactly one entry — lidocaine
+Primary Dose Unit `mcg/kg/kin` (should be `mcg/kg/min`) — and nothing else. Only "min" is checked
+(as requested); the same pattern could be extended to catch `hr` typos if needed.
+
 ### Rule 11 — Time Limit Column Not in hh:mm:ss Format
 Columns O–S (Primary time), Z–AD (Bolus time), AK–AO (Loading time) must contain Excel time values (stored internally as decimal fractions 0–1 representing fractions of a 24-hour day).
 

@@ -920,6 +920,30 @@ function validate(workbook) {
         }
       }
 
+      // ── Rule 23: Likely misspelling of "min" in a dose unit (cols I / T / AE) ──
+      // Rate units end in a time token — "min" or "hr". Catch a last "/"-segment that is one typo
+      // away from "min" (e.g. "mcg/kg/kin") or a transposition of it ("mni"), but leave valid time
+      // tokens and legitimate non-time units (mg, mL, mcg, kg, units, …) alone.
+      const VALID_TIME_TOKENS = new Set(['m','min','minute','mins','minutes','h','hr','hour','hrs','hours']);
+      const minCheckCols = [
+        { idx: C.PRI_UNIT, label: 'Primary Dose Unit (col I)' },
+        { idx: C.BOL_UNIT, label: 'Bolus Dose Unit (col T)' },
+        { idx: C.LOD_UNIT, label: 'Loading Dose Unit (col AE)' },
+      ];
+      for (const { idx, label } of minCheckCols) {
+        const u = row[idx];
+        if (isEmpty(u)) continue;
+        const lastRaw = String(u).split('/').pop().trim();
+        const tok = lastRaw.toLowerCase();
+        if (!tok || VALID_TIME_TOKENS.has(tok)) continue;
+        const isTranspositionOfMin = tok.length === 3 && [...tok].sort().join('') === 'imn'; // anagram of "min"
+        if (levenshtein(tok, 'min') === 1 || isTranspositionOfMin) {
+          allIssues.push({ rule: 23, ...loc,
+            msg: `${label} = "${u}" — "${lastRaw}" looks like a misspelling of "min". Did you mean ".../min"?`
+          });
+        }
+      }
+
       // ── Rule 14: Drug name spelling ────────────────────────────────────────
       if (!isEmpty(drugName) && !String(drugName).trim().toLowerCase().startsWith('rate mode')) {
         const trimmedDrug = String(drugName).trimEnd();
@@ -1095,6 +1119,7 @@ const RULE_INFO = {
   20: { title: 'Rule 20 — Dosing Name vs Entered Concentration (red = no match, yellow = same final concentration)', severity: 'err' },
   21: { title: 'Rule 21 — Dose Unit & KVO Mode (cols I, T, AE, AT) Must Be Letters or Blank (no numbers)', severity: 'err' },
   22: { title: 'Rule 22 — Dose/Limit/Weight Columns (J–N, U–Y, AF–AJ, AP–AS) Must Be Numbers or Blank (no letters)', severity: 'err' },
+  23: { title: 'Rule 23 — Possible Misspelling of "min" in a Dose Unit (cols I / T / AE)', severity: 'err' },
 };
 
 function renderResults(issues) {
