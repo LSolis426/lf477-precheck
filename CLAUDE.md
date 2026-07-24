@@ -131,8 +131,8 @@ Weight limit columns (AP–AS) must be between 0.1 and 999 kg if filled.
 ### Rule 9 — Name Too Long for Display Field
 Care Area, Drug Name, and Dosing Name each have a physical pixel-width limit on the pump screen. Each character has a known capacity (how many of that character fit):
 
-- **Flagging threshold:** fill ratio > 1.13 (over 113% capacity)
-- **Split threshold for highlighting:** 1.13 (empirically calibrated from confirmed pump behavior — names up to ratio ~1.104 still display in full)
+- **Flagging threshold:** fill ratio > **1.18** (shared constant `NAME_FIT_THRESHOLD`, used for both the flag and the red-overflow split). Raised from 1.13 in 2026 after an emulator-confirmed fit at 1.134 (see below).
+- **Split threshold for highlighting:** same `NAME_FIT_THRESHOLD` (1.18)
 - **Display:** The Issue cell shows the name with a monospace font; characters that fit are normal, characters that overflow are **red with underline**. Hovering shows tooltip.
 
 Character capacities are Tallman-lettering aware (uppercase and lowercase have separate tables). Unknown characters (digits, spaces, symbols) default to capacity 20.
@@ -145,8 +145,9 @@ Character capacities are Tallman-lettering aware (uppercase and lowercase have s
 - `"NORepinephrine mcg/kg/"` fits (ratio 1.073)
 - `"NORepinephrine mcg/min"` fits (ratio 1.086)
 - `"NORepinephri mcg/kg/mn"` fits (ratio 1.104)
+- `" Wt Based: 0.075 mg/mL"` fits (ratio 1.134, **confirmed in the pump emulator 2026** — note the leading space; without it the string is only 1.017). This is why the threshold was raised from 1.13 to 1.18: the old value produced a false positive on this real, fitting name.
 
-For `"NORepinephrine mcg/kg/min"` (ratio 1.232), split at 1.13 correctly shows fits=`"NORepinephrine mcg/kg/"` over=`"min"`.
+For `"NORepinephrine mcg/kg/min"` (ratio 1.232, still > 1.18 → correctly flagged), the split shows fits=`"NORepinephrine mcg/kg/"` over=`"min"`. The threshold 1.18 sits midway between the highest confirmed fit (1.134) and the lowest confirmed overflow (1.232). If more real fit/overflow data points emerge, adjust `NAME_FIT_THRESHOLD` accordingly (a single number now drives both the flag and the highlight).
 
 ### Rule 10 — Alphabetical Order May Surprise Clinicians
 Within each care area + drug group, dosing names are sorted two ways:
