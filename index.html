@@ -390,10 +390,15 @@ const VALID_UNIT_WORDS = new Set([
 // Returns true if `tok` (lowercase) looks like a typo of "unit"/"units" — one edit away, or a
 // transposition (same letters, different order). Valid unit words are never flagged.
 function looksLikeUnitWord(tok) {
-  if (!tok || VALID_UNIT_WORDS.has(tok)) return false;
-  if (levenshtein(tok, 'unit') === 1 || levenshtein(tok, 'units') === 1) return true;
+  return unitMisspellTarget(tok) !== null;
+}
+// Returns the intended word ("unit" or "units") that `tok` (lowercase) appears to misspell, or null.
+function unitMisspellTarget(tok) {
+  if (!tok || VALID_UNIT_WORDS.has(tok)) return null;
   const sorted = [...tok].sort().join('');
-  return sorted === 'intu' || sorted === 'instu'; // anagram of "unit" / "units"
+  if (levenshtein(tok, 'unit')  === 1 || sorted === 'intu')  return 'unit';   // 1 edit / anagram of "unit"
+  if (levenshtein(tok, 'units') === 1 || sorted === 'instu') return 'units';  // 1 edit / anagram of "units"
+  return null;
 }
 
 // Returns boolean[] marking which positions in `a` are "wrong" relative to `b` (both lowercase).
@@ -987,9 +992,12 @@ function validate(workbook) {
         String(row[uIdx]).split('/').forEach(seg => { const t = seg.trim(); if (t) unitTokChecks.push([uLbl, String(row[uIdx]), t]); });
       }
       for (const [label, raw, tok] of unitTokChecks) {
-        if (looksLikeUnitWord(tok.toLowerCase())) {
+        const target = unitMisspellTarget(tok.toLowerCase());
+        if (target) {
+          const wrong = wrongPositions(tok.toLowerCase(), target); // which chars in tok are wrong vs the correct word
           allIssues.push({ rule: 24, ...loc,
-            msg: `${label} = "${raw}" — "${tok}" looks like a misspelling of "unit"/"units".`
+            r24label: label, r24raw: raw, r24token: tok, r24target: target, r24wrong: wrong,
+            msg: `${label} = "${raw}" — "${tok}" looks like a misspelling of "${target}".`
           });
         }
       }
@@ -1453,6 +1461,32 @@ function renderResults(issues) {
         }).join('');
         bodyHtml = `<div class="ord-groups-wrap">${groupsHtml}</div>`;
       }
+    } else if (Number(ruleNum) === 25) {
+      // Special rendering: one box per group, listing every spelling and its Excel rows
+      if (ruleIssues.length === 0) {
+        bodyHtml = '<div class="ok-banner">✅ No drug names differ only by capitalization or spacing.</div>';
+      } else {
+        const groupsHtml = ruleIssues.map(issue => `
+          <div class="dup-group">
+            <div class="dup-group-header">
+              <span class="dup-icon">🔠</span>
+              <span>Same drug in care area <strong>${escHtml(issue.care || '—')}</strong>, entered ${issue.variants.length} different ways.
+              The pump lists these as <strong>separate</strong> entries — pick one consistent spelling.</span>
+            </div>
+            <table>
+              <thead><tr><th>Sheet</th><th>Drug Name (as entered)</th><th>Excel Rows</th></tr></thead>
+              <tbody>
+                ${issue.variants.map(v => `
+                  <tr>
+                    <td><span class="sheet-tag">${escHtml(issue.sheet)}</span></td>
+                    <td class="drug-col"><span style="white-space:pre-wrap">${escHtml(v.name)}</span></td>
+                    <td class="dup-row-num">${v.rows.join(', ')}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>`).join('');
+        bodyHtml = `<div class="dup-groups-wrap">${groupsHtml}</div>`;
+      }
     } else {
       // Standard rendering for all other rules
       const stdBadge = ruleIssues.length === 0 ? '✓ Clear' : `${ruleIssues.length} issue${ruleIssues.length !== 1 ? 's' : ''}`;
@@ -1505,6 +1539,12 @@ function renderResults(issues) {
                                  <span class="conc-chip ${kindClass}">${escHtml(i.r20.entered)}</span>
                                </div>
                                <div class="unit-compat-note">${escHtml(i.r20.note)}</div>`;
+                } else if (i.r24token !== undefined) {
+                  // Rule 24: show the token with the misspelled characters highlighted + suggestion
+                  const wordHtml = buildSpellingHtml(i.r24token, i.r24wrong);
+                  issueCell = `<div class="name-field-label">${escHtml(i.r24label)} = "${escHtml(i.r24raw)}"</div>
+                               <div class="spell-word">${wordHtml}</div>
+                               <div class="spell-suggest">→ Did you mean <strong>${escHtml(i.r24target)}</strong>?</div>`;
                 } else {
                   issueCell = `<span class="msg-col">${escHtml(i.msg)}</span>`;
                 }

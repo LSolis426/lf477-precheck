@@ -192,8 +192,10 @@ pump is case/space-sensitive, so it lists these as **two separate drug entries**
 to open one, discover it's the wrong sub-list of dosing names, back out, and open the other. Wasteful
 and confusing. Detection: drug names are grouped per `(sheet, care area)` by a normalized key
 (`trim` + collapse internal whitespace + `toLowerCase`); any key with 2+ distinct raw spellings is
-flagged, listing each spelling and its rows. Scoped per care area (same name in different care areas
-is fine — separate lists). Note Rule 13's own drug list intentionally de-dupes case-insensitively, so
+flagged. It renders as a bordered group (like Rule 1) with a small table listing **every spelling
+as entered and its Excel rows** — so both `vasopressin -   Shock` (its rows) and `vasopressin -   SHOCK`
+(its rows) appear under Drug Name side by side. Spellings render with `white-space:pre-wrap` so spacing
+differences stay visible. Scoped per care area (same name in different care areas is fine — separate lists). Note Rule 13's own drug list intentionally de-dupes case-insensitively, so
 it would *hide* this collision — Rule 25 is the dedicated check. Severity: warn. Verified against the
 Connecticut Children's 07.24.26 file: flags exactly the vasopressin `Shock`/`SHOCK` group (No-Z,
 rows 34–36 vs 37–38) and nothing else.
@@ -279,7 +281,9 @@ typos like `uniit` (should be `unit`). It checks three places: the **Conc Unit**
 **numerator unit** written in the **Dosing Name** (col D — the letters right after the first amount,
 e.g. the `uniit` in `1 uniit/mL`), and each `/`-segment of the **dose-unit** columns (I / T / AE). A
 token is flagged when it's one edit from `unit` or `units`, or a transposition of their letters
-(`uint`, `nuit`, …). The `looksLikeUnitWord` helper first excludes a dictionary of `VALID_UNIT_WORDS`
+(`uint`, `nuit`, …). The Issue cell **highlights the wrong character(s)** in yellow (via
+`wrongPositions` + `buildSpellingHtml`, shared with Rule 14) and shows a "Did you mean *unit*?"
+suggestion — e.g. `uniit` renders as un[i]it with the extra `i` marked. The `looksLikeUnitWord` helper first excludes a dictionary of `VALID_UNIT_WORDS`
 (`mg`, `mcg`, `mL`, `kg`, `ng`, `unit`, `units`, **`milliunits`**, `min`, `hr`, …) so real units — most
 importantly `milliunits`, which appears legitimately in col I — are never flagged. Note Rule 20 does
 NOT catch a `Dosing Name` like `1 uniit/mL` because it has no diluent *amount* (it's "per mL", not
