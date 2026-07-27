@@ -382,6 +382,20 @@ function levenshtein(a, b) {
   return row[b.length];
 }
 
+// Known valid unit words/tokens (lowercase) — used to avoid false-flagging real units as misspellings.
+const VALID_UNIT_WORDS = new Set([
+  'mcg','mg','g','ng','kg','ml','l','unit','units','milliunit','milliunits','mu','meq','mmol','mol',
+  'min','mins','minute','minutes','hr','hrs','hour','hours','h','m','kcal','microgram','milligram','nanogram',
+]);
+// Returns true if `tok` (lowercase) looks like a typo of "unit"/"units" — one edit away, or a
+// transposition (same letters, different order). Valid unit words are never flagged.
+function looksLikeUnitWord(tok) {
+  if (!tok || VALID_UNIT_WORDS.has(tok)) return false;
+  if (levenshtein(tok, 'unit') === 1 || levenshtein(tok, 'units') === 1) return true;
+  const sorted = [...tok].sort().join('');
+  return sorted === 'intu' || sorted === 'instu'; // anagram of "unit" / "units"
+}
+
 // Returns boolean[] marking which positions in `a` are "wrong" relative to `b` (both lowercase).
 // Uses full DP matrix + backtrace so consecutive wrong chars stay grouped.
 function wrongPositions(a, b) {
@@ -944,6 +958,29 @@ function validate(workbook) {
         }
       }
 
+      // ── Rule 24: Likely misspelling of "unit"/"units" ──
+      // "unit"/"units" appear as concentration/dose units (heparin, insulin, vasopressin, …).
+      // Catch near-miss typos like "uniit" (should be "unit"). Checks the Conc Unit (col E), the
+      // numerator unit written in the Dosing Name (col D), and each "/"-segment of the dose-unit
+      // columns (I / T / AE). Valid unit words (incl. "milliunits", "mg", "mL", "kg") are left alone.
+      const unitTokChecks = [];
+      if (!isEmpty(row[C.CONC_UNIT])) unitTokChecks.push(['Conc Unit (col E)', String(row[C.CONC_UNIT]), String(row[C.CONC_UNIT]).trim()]);
+      if (!isEmpty(dosingName)) {
+        const mm = String(dosingName).match(/[\d.,]+\s*([A-Za-z]+)/); // unit right after the first amount
+        if (mm) unitTokChecks.push(['Dosing Name (col D)', String(dosingName), mm[1]]);
+      }
+      for (const [uIdx, uLbl] of [[C.PRI_UNIT,'Primary Dose Unit (col I)'],[C.BOL_UNIT,'Bolus Dose Unit (col T)'],[C.LOD_UNIT,'Loading Dose Unit (col AE)']]) {
+        if (isEmpty(row[uIdx])) continue;
+        String(row[uIdx]).split('/').forEach(seg => { const t = seg.trim(); if (t) unitTokChecks.push([uLbl, String(row[uIdx]), t]); });
+      }
+      for (const [label, raw, tok] of unitTokChecks) {
+        if (looksLikeUnitWord(tok.toLowerCase())) {
+          allIssues.push({ rule: 24, ...loc,
+            msg: `${label} = "${raw}" — "${tok}" looks like a misspelling of "unit"/"units".`
+          });
+        }
+      }
+
       // ── Rule 14: Drug name spelling ────────────────────────────────────────
       if (!isEmpty(drugName) && !String(drugName).trim().toLowerCase().startsWith('rate mode')) {
         const trimmedDrug = String(drugName).trimEnd();
@@ -1120,6 +1157,7 @@ const RULE_INFO = {
   21: { title: 'Rule 21 — Dose Unit & KVO Mode (cols I, T, AE, AT) Must Be Letters or Blank (no numbers)', severity: 'err' },
   22: { title: 'Rule 22 — Dose/Limit/Weight Columns (J–N, U–Y, AF–AJ, AP–AS) Must Be Numbers or Blank (no letters)', severity: 'err' },
   23: { title: 'Rule 23 — Possible Misspelling of "min" in a Dose Unit (cols I / T / AE)', severity: 'err' },
+  24: { title: 'Rule 24 — Possible Misspelling of "unit"/"units" (Conc Unit, Dosing Name, or Dose Unit)', severity: 'err' },
 };
 
 function renderResults(issues) {

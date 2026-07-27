@@ -260,6 +260,20 @@ against the Connecticut Children's file, where it correctly flags exactly one en
 Primary Dose Unit `mcg/kg/kin` (should be `mcg/kg/min`) — and nothing else. Only "min" is checked
 (as requested); the same pattern could be extended to catch `hr` typos if needed.
 
+### Rule 24 — Possible Misspelling of "unit"/"units"
+`unit`/`units` are real drug units (heparin, insulin, vasopressin, …). This rule catches near-miss
+typos like `uniit` (should be `unit`). It checks three places: the **Conc Unit** cell (col E), the
+**numerator unit** written in the **Dosing Name** (col D — the letters right after the first amount,
+e.g. the `uniit` in `1 uniit/mL`), and each `/`-segment of the **dose-unit** columns (I / T / AE). A
+token is flagged when it's one edit from `unit` or `units`, or a transposition of their letters
+(`uint`, `nuit`, …). The `looksLikeUnitWord` helper first excludes a dictionary of `VALID_UNIT_WORDS`
+(`mg`, `mcg`, `mL`, `kg`, `ng`, `unit`, `units`, **`milliunits`**, `min`, `hr`, …) so real units — most
+importantly `milliunits`, which appears legitimately in col I — are never flagged. Note Rule 20 does
+NOT catch a `Dosing Name` like `1 uniit/mL` because it has no diluent *amount* (it's "per mL", not
+"/ X mL"), so its strict 4-part concentration regex doesn't match — Rule 24 covers that gap. Verified
+against the Connecticut Children's 07.24.26 file: flags exactly one entry (insulin regular, Dosing
+Name `1 uniit/mL`) with no false positives despite many `milliunits/kg/min` and `units/kg/hr` cells.
+
 ### Rule 11 — Time Limit Column Not in hh:mm:ss Format
 Columns O–S (Primary time), Z–AD (Bolus time), AK–AO (Loading time) must contain Excel time values (stored internally as decimal fractions 0–1 representing fractions of a 24-hour day).
 
