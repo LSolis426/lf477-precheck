@@ -185,6 +185,19 @@ Within each care area (sheet + col B), the pump displays drug names in alphabeti
 
 Display: side-by-side "Template entry order" vs "Pump will show (alphabetical)", with drugs that changed position highlighted. Also flags drug names starting with a non-alphanumeric character (those float before A–Z on the pump screen). Severity: warn.
 
+### Rule 25 — Same Drug Name, Different Capitalization
+Within a care area, flags Drug Names (col C) that are the same to a clinician but were entered with
+different **capitalization or spacing**, e.g. `vasopressin -   Shock` vs `vasopressin -   SHOCK`. The
+pump is case/space-sensitive, so it lists these as **two separate drug entries** — the clinician has
+to open one, discover it's the wrong sub-list of dosing names, back out, and open the other. Wasteful
+and confusing. Detection: drug names are grouped per `(sheet, care area)` by a normalized key
+(`trim` + collapse internal whitespace + `toLowerCase`); any key with 2+ distinct raw spellings is
+flagged, listing each spelling and its rows. Scoped per care area (same name in different care areas
+is fine — separate lists). Note Rule 13's own drug list intentionally de-dupes case-insensitively, so
+it would *hide* this collision — Rule 25 is the dedicated check. Severity: warn. Verified against the
+Connecticut Children's 07.24.26 file: flags exactly the vasopressin `Shock`/`SHOCK` group (No-Z,
+rows 34–36 vs 37–38) and nothing else.
+
 ### Rule 12 — Conc Unit Filled Without Numeric Concentration Values
 If Conc Amount (F) and Diluent Amount (H) are both blank, Conc Unit (E) must also be blank. When a pharmacist intends a wildcard concentration (any concentration allowed), all three fields should be empty. A unit in E with no numbers in F/H is an incomplete entry.
 

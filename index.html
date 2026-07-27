@@ -475,6 +475,7 @@ function validate(workbook) {
   const dupGroups = new Map();    // Rule 1: pairKey → [loc, ...]
   const dosingGroups = new Map(); // Rule 10: "sheet|||care|||drug" → [{dosing, row}]
   const drugOrderMap = new Map(); // Rule 13: "sheet|||care" → { sheet, care, drugs: [{name, row}] }
+  const drugCaseMap = new Map();  // Rule 25: "sheet|||care" → Map(normalizedName → Map(rawName → [rows]))
 
   for (const sheetName of workbook.SheetNames) {
     const ws = workbook.Sheets[sheetName];
@@ -527,6 +528,18 @@ function validate(workbook) {
         if (!d13.drugs.some(x => x.name.toLowerCase() === dn.toLowerCase())) {
           d13.drugs.push({ name: dn, row: excelRow });
         }
+
+        // ── Rule 25: Collect raw drug-name spellings per (sheet, care area), grouped by a
+        // normalized key (trim + collapse internal whitespace + lowercase). Multiple distinct raw
+        // spellings sharing one key = "same name to a clinician, separate entries on the pump".
+        const norm = String(drugName).trim().replace(/\s+/g, ' ').toLowerCase();
+        if (!drugCaseMap.has(caKey13)) drugCaseMap.set(caKey13, new Map());
+        const byNorm = drugCaseMap.get(caKey13);
+        if (!byNorm.has(norm)) byNorm.set(norm, new Map());
+        const spellings = byNorm.get(norm);
+        const rawName = String(drugName);
+        if (!spellings.has(rawName)) spellings.set(rawName, []);
+        spellings.get(rawName).push(excelRow);
       }
 
       // ── Rule 5: Required fields ───────────────────────────────────────────
@@ -1129,6 +1142,31 @@ function validate(workbook) {
     });
   }
 
+  // ── Rule 25 finalization: Drug Names that differ only by capitalization / whitespace ────
+  // Within a care area, spellings that normalize to the same key but were entered differently
+  // (e.g. "vasopressin -   Shock" vs "vasopressin -   SHOCK") program as SEPARATE pump entries
+  // even though a clinician sees them as the same drug.
+  for (const [caKey, byNorm] of drugCaseMap) {
+    const [sheet, care] = caKey.split('|||');
+    for (const [, spellings] of byNorm) {
+      if (spellings.size < 2) continue; // only one spelling — fine
+      const variants = [...spellings.entries()].map(([name, rows]) => ({ name, rows }));
+      const rowsFmt = rows => rows.join(rows.length > 1 ? ', ' : '');
+      const listTxt = variants
+        .map(v => `"${v.name.trim()}" (row${v.rows.length > 1 ? 's' : ''} ${rowsFmt(v.rows)})`)
+        .join(' vs ');
+      allIssues.push({
+        rule: 25,
+        type: 'case_variant_group',
+        sheet, care, drug: variants[0].name.trim(), dosing: '—', row: variants[0].rows[0],
+        variants,
+        msg: `Same Drug Name entered with different capitalization/spacing: ${listTxt}. `
+           + `The pump lists these as SEPARATE drugs even though they are the same to a clinician — `
+           + `pick one consistent spelling so it appears as a single entry.`,
+      });
+    }
+  }
+
   return allIssues;
 }
 
@@ -1158,6 +1196,7 @@ const RULE_INFO = {
   22: { title: 'Rule 22 — Dose/Limit/Weight Columns (J–N, U–Y, AF–AJ, AP–AS) Must Be Numbers or Blank (no letters)', severity: 'err' },
   23: { title: 'Rule 23 — Possible Misspelling of "min" in a Dose Unit (cols I / T / AE)', severity: 'err' },
   24: { title: 'Rule 24 — Possible Misspelling of "unit"/"units" (Conc Unit, Dosing Name, or Dose Unit)', severity: 'err' },
+  25: { title: 'Rule 25 — Same Drug Name, Different Capitalization (programs as separate pump entries)', severity: 'warn' },
 };
 
 function renderResults(issues) {
