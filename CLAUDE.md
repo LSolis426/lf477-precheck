@@ -174,11 +174,23 @@ number** — so a group like ` Wt Based: 16/32/128` and `Non-Wt: 16/32/128` gets
 Critically, a single space at the FRONT of the flagged items backfires when there's a text prefix (it
 reshuffles across groups) or when digit-widths differ (space before `2` alone → 2, 1, 10). The engine
 computes `fixPlan` = per-item `{spaces, at}` (how many spaces, and the character offset to insert them,
-i.e. before the number), but only after **verifying** via `pumpCompare` that applying it actually
-reproduces the template order. If any name has no number, or padding doesn't reproduce the intended
-order, it falls back to the older one-space `needsFix` hint. In the UI, the yellow dashed space box(es)
-are rendered at the insertion point (before the number), and the Fix text lists each item + the count;
-for pure number-leading groups it also shows the resulting numeric order.
+i.e. before the number), plus `fixKind`, but only after **verifying** via `pumpCompare` that applying it
+actually reproduces the template order.
+
+Two strategies are tried in order (whichever first reproduces the template order wins):
+- **`fixKind: 'number'`** — number-width padding (above). For numeric dosing names; spaces go *before the
+  number* (`at` = offset of the number).
+- **`fixKind: 'leading'`** — general **graduated leading spaces**, for any template order including
+  **non-numeric** groups (e.g. `Std` / `Dbl` / `5x`, where `5x` sorts first because digits precede
+  letters). Computed right-to-left, adding just enough leading spaces to each item to force it ahead of
+  the next. Example: to get template order `Std, Dbl, 5x`, it recommends **2 spaces before `Std`, 1
+  before `Dbl`, 0 before `5x`** — note a *single* space on each would give `Dbl, Std, 5x` (both before
+  `5x` but alphabetical between themselves), so the earlier item needs one extra space to stay first.
+
+If neither strategy reproduces the template order, it falls back to the older one-space `needsFix` hint.
+In the UI the yellow dashed space box(es) render at the insertion point (`at`), and the Fix text lists
+each item + its space count (worded "before the number in" vs "at the start of" per `fixKind`); for pure
+number-leading groups it also shows the resulting numeric order.
 
 ### Rule 13 — Drug Display Order Within Care Area
 Within each care area (sheet + col B), the pump displays drug names in alphabetical order regardless of template entry order. This rule flags care areas where the pump's alphabetical order would differ from the order drugs were entered, so pharmacists can see what the pump will actually show.

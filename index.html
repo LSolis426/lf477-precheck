@@ -1087,31 +1087,52 @@ function validate(workbook) {
     // used if it PROVABLY reproduces the template order (verified via pumpCompare); otherwise
     // we fall back to `needsFix`. This avoids the naive one-space hint that backfires when
     // numbers have different digit-lengths (e.g. a space before "2" alone gives 2, 1, 10).
-    let fixPlan = null;        // [{ dosing, row, spaces, at }] items needing space(s) before their number, or null
+    let fixPlan = null;        // [{ dosing, row, spaces, at }] items needing space(s), or null
     let fixResultOrder = null; // number list in resulting order (only when names are pure number-leading)
+    let fixKind = null;        // 'number' (spaces before the number) or 'leading' (spaces at the front)
     (function computeFixPlan(){
-      // Parse each name as <non-digit prefix><number>. The prefix may be leading spaces and/or text
-      // (e.g. "" for "16 mcg/mL", or " Wt Based: " for " Wt Based: 16 mcg/mL"). Pad the number to equal
-      // width WITHIN each identical-prefix group by inserting spaces just before the number — the pump's
-      // character sort then orders numbers numerically (16, 32, 128) instead of lexically (128, 16, 32).
+      // ── Strategy A — number-width padding ──
+      // Parse each name as <non-digit prefix><number> ("" / " Wt Based: " prefix, then a number). Pad the
+      // number to equal width WITHIN each identical-prefix group by inserting spaces just before the number,
+      // so the pump sorts numbers numerically (16, 32, 128) instead of lexically (128, 16, 32). Elegant for
+      // numeric dosing names; only used if it PROVABLY reproduces the template order.
       const parse = s => { const m = String(s).match(/^(\D*)(\d+)/); return m ? { prefix: m[1], num: m[2], at: m[1].length } : null; };
       const parsed = entries.map(e => parse(e.dosing));
-      if (!parsed.every(Boolean)) return;               // some name has no number → fallback
-      const maxByPrefix = {};
-      parsed.forEach(p => { maxByPrefix[p.prefix] = Math.max(maxByPrefix[p.prefix] || 0, p.num.length); });
-      const plan = entries.map((e, i) => ({
-        dosing: e.dosing, row: e.row, at: parsed[i].at,
-        spaces: maxByPrefix[parsed[i].prefix] - parsed[i].num.length,
-      }));
-      // Apply padding (insert spaces before the number) and verify the pump sort reproduces template order.
-      const padded = entries.map((e, i) => e.dosing.slice(0, plan[i].at) + ' '.repeat(plan[i].spaces) + e.dosing.slice(plan[i].at));
-      const order = padded.map((_, i) => i).sort((a, b) => pumpCompare(padded[a], padded[b]));
-      if (!order.every((origIdx, pos) => origIdx === pos)) return; // padding doesn't reproduce template order → fallback
-      const toAdd = plan.filter(p => p.spaces > 0);
-      if (toAdd.length === 0) return;
-      fixPlan = toAdd;
-      // Only show a numeric "will show in order" list when every name is purely number-leading (no text prefix).
-      if (parsed.every(p => p.prefix.trim() === '')) fixResultOrder = parsed.map(p => p.num);
+      if (parsed.every(Boolean)) {
+        const maxByPrefix = {};
+        parsed.forEach(p => { maxByPrefix[p.prefix] = Math.max(maxByPrefix[p.prefix] || 0, p.num.length); });
+        const plan = entries.map((e, i) => ({
+          dosing: e.dosing, row: e.row, at: parsed[i].at,
+          spaces: maxByPrefix[parsed[i].prefix] - parsed[i].num.length,
+        }));
+        const padded = entries.map((e, i) => e.dosing.slice(0, plan[i].at) + ' '.repeat(plan[i].spaces) + e.dosing.slice(plan[i].at));
+        const order = padded.map((_, i) => i).sort((a, b) => pumpCompare(padded[a], padded[b]));
+        if (order.every((oi, pos) => oi === pos)) {
+          const toAdd = plan.filter(p => p.spaces > 0);
+          if (toAdd.length) {
+            fixPlan = toAdd; fixKind = 'number';
+            if (parsed.every(p => p.prefix.trim() === '')) fixResultOrder = parsed.map(p => p.num);
+            return;
+          }
+        }
+      }
+      // ── Strategy B — general graduated leading spaces ──
+      // Works for any template order, including non-numeric groups (e.g. Std / Dbl / 5x). Add just enough
+      // leading spaces to each item so the pump sort equals the template order: more leading spaces sort
+      // earlier, and equal counts sort by the name itself. Computed right-to-left so each item is forced
+      // just ahead of the next. Example: Std / Dbl / 5x → Std gets 2 spaces, Dbl gets 1, 5x gets 0.
+      const s = entries.map(() => 0);
+      const pad = i => ' '.repeat(s[i]) + entries[i].dosing;
+      for (let i = entries.length - 2; i >= 0; i--) {
+        let guard = 0;
+        while (pumpCompare(pad(i), pad(i + 1)) >= 0 && guard++ < 100) s[i]++;
+      }
+      const paddedB = entries.map((_, i) => pad(i));
+      const orderB = paddedB.map((_, i) => i).sort((a, b) => pumpCompare(paddedB[a], paddedB[b]));
+      if (orderB.every((oi, pos) => oi === pos)) {
+        const toAdd = entries.map((e, i) => ({ dosing: e.dosing, row: e.row, at: 0, spaces: s[i] })).filter(p => p.spaces > 0);
+        if (toAdd.length) { fixPlan = toAdd; fixKind = 'leading'; }
+      }
     })();
 
     allIssues.push({
@@ -1124,7 +1145,8 @@ function validate(workbook) {
       hasInversion,
       symbolEntries,
       needsFix,
-      fixPlan,        // preferred number-padding fix (or null)
+      fixPlan,        // computed space-padding fix (or null)
+      fixKind,        // 'number' | 'leading' (how to describe where the spaces go)
       fixResultOrder, // leading numbers in fixed order (or null)
     });
   }
@@ -1355,15 +1377,20 @@ function renderResults(issues) {
           // Fix recommendation
           let fixHtml = '';
           if (issue.fixPlan) {
-            // Number-padding fix: list each item and how many spaces to add before its number.
-            const parts = issue.fixPlan.map(p =>
-              `${p.spaces} space${p.spaces !== 1 ? 's' : ''} before the number in "${escHtml(p.dosing.trim())}"`);
+            // Space-padding fix: list each item + how many spaces, worded by fix kind (number vs leading).
+            const parts = issue.fixPlan.map(p => {
+              const n = `${p.spaces} space${p.spaces !== 1 ? 's' : ''}`;
+              return issue.fixKind === 'leading'
+                ? `${n} at the start of "${escHtml(p.dosing.trim())}"`
+                : `${n} before the number in "${escHtml(p.dosing.trim())}"`;
+            });
             const list = parts.length === 1 ? parts[0]
               : parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
+            const why = issue.fixKind === 'number' ? ' so every number is the same width' : '';
             const resultTxt = issue.fixResultOrder
               ? ` The pump will then show them in order: ${escHtml(issue.fixResultOrder.join(', '))}.`
-              : ` This lines the numbers up within each group so the pump lists them in the Template Entry Order shown on the left.`;
-            fixHtml = `<div class="ord-fix">💡 <strong>Fix:</strong> Add ${list} so every number is the same width.${resultTxt}</div>`;
+              : ` The pump will then list them in the Template Entry Order shown on the left.`;
+            fixHtml = `<div class="ord-fix">💡 <strong>Fix:</strong> Add ${list}${why}.${resultTxt}</div>`;
           } else if (issue.needsFix.length > 0) {
             const fixList = issue.needsFix.map(e => `"${escHtml(e.dosing)}"`).join(', ');
             fixHtml = `<div class="ord-fix">💡 <strong>Fix:</strong> Add a leading space or symbol before ${fixList} to move it earlier in the pump's alphabetical display.</div>`;
