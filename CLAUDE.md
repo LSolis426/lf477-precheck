@@ -296,8 +296,11 @@ token is flagged when it's one edit from `unit` or `units`, or a transposition o
 (`uint`, `nuit`, …). The Issue cell **highlights the wrong character(s)** in yellow (via
 `wrongPositions` + `buildSpellingHtml`, shared with Rule 14) and shows a "Did you mean *unit*?"
 suggestion — e.g. `uniit` renders as un[i]it with the extra `i` marked. The `looksLikeUnitWord` helper first excludes a dictionary of `VALID_UNIT_WORDS`
-(`mg`, `mcg`, `mL`, `kg`, `ng`, `unit`, `units`, **`milliunits`**, `min`, `hr`, …) so real units — most
-importantly `milliunits`, which appears legitimately in col I — are never flagged. Note Rule 20 does
+(`mg`, `mcg`, `mL`, `kg`, `ng`, `unit`, `units`, **`milliunits`** and its abbreviation **`mUnits`/`mUnit`/`mU`**,
+`min`, `hr`, …) so real units are never flagged. This matters: `mUnits` (milliunits) is only one edit from
+`units` (delete the `m`), so without the dictionary entry it would be a false positive — as seen on
+Ascension's Vasopressin `mUnits/kg/min`. Both the spelled-out `milliunits` and the abbreviated `mUnits`
+appear legitimately in col I across templates. Note Rule 20 does
 NOT catch a `Dosing Name` like `1 uniit/mL` because it has no diluent *amount* (it's "per mL", not
 "/ X mL"), so its strict 4-part concentration regex doesn't match — Rule 24 covers that gap. Verified
 against the Connecticut Children's 07.24.26 file: flags exactly one entry (insulin regular, Dosing

@@ -385,7 +385,7 @@ function levenshtein(a, b) {
 
 // Known valid unit words/tokens (lowercase) — used to avoid false-flagging real units as misspellings.
 const VALID_UNIT_WORDS = new Set([
-  'mcg','mg','g','ng','kg','ml','l','unit','units','milliunit','milliunits','mu','meq','mmol','mol',
+  'mcg','mg','g','ng','kg','ml','l','unit','units','milliunit','milliunits','munit','munits','mu','mus','meq','mmol','mol',
   'min','mins','minute','minutes','hr','hrs','hour','hours','h','m','kcal','microgram','milligram','nanogram',
 ]);
 // Returns true if `tok` (lowercase) looks like a typo of "unit"/"units" — one edit away, or a
