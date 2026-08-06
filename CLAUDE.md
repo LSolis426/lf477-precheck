@@ -91,6 +91,13 @@ The tool expects the standard iRadimed LF477 Excel layout:
 
 ## Rules Implemented
 
+> **In-app "Rules reference" panel.** The header has a *Rules reference* button that opens a modal
+> explaining every rule in plain language for the team. It's built at load by `buildRulesPanel()` from
+> `RULE_INFO` (titles + severity) plus the `RULE_DESC` map (one description per rule number) — so when
+> you add or change a rule, update `RULE_DESC` to keep the panel in sync. The panel also includes a
+> column key and an Error/Warning legend. (A standalone shareable version of this reference also exists
+> as a Claude artifact.)
+
 ### Rule 1 — Duplicate Drug + Dosing Name
 Within the same care area (same sheet + same col B value), every Drug Name + Dosing Name pair must be unique. Duplicates are shown as bordered amber groups listing all matching rows.
 

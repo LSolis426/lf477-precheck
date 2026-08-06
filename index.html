@@ -158,6 +158,74 @@
     cursor: pointer; transition: background 0.2s;
   }
   .run-btn:hover { background: #3b5de7; }
+
+  /* Rules reference button + panel */
+  .rules-btn {
+    margin-left: auto; display: inline-flex; align-items: center; gap: 7px;
+    background: rgba(255,255,255,0.08); color: #fff; border: 1px solid rgba(255,255,255,0.22);
+    padding: 7px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .rules-btn:hover { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.4); }
+  .rules-btn svg { width: 15px; height: 15px; }
+
+  .rules-overlay {
+    position: fixed; inset: 0; background: rgba(15,18,26,0.55); z-index: 1000;
+    display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px;
+    overflow-y: auto;
+  }
+  .rules-overlay[hidden] { display: none; }
+  .rules-panel {
+    background: #fff; width: 100%; max-width: 880px; border-radius: 14px; overflow: hidden;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.35); margin: auto;
+  }
+  .rules-head {
+    position: sticky; top: 0; background: #1a1a2e; color: #fff;
+    padding: 18px 24px; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+  }
+  .rules-head h2 { font-size: 18px; font-weight: 700; }
+  .rules-head p { font-size: 13px; opacity: 0.6; margin-top: 4px; max-width: 60ch; }
+  .rules-close {
+    background: rgba(255,255,255,0.1); color: #fff; border: none; width: 32px; height: 32px;
+    border-radius: 8px; font-size: 15px; cursor: pointer; flex: 0 0 auto; line-height: 1;
+  }
+  .rules-close:hover { background: rgba(255,255,255,0.22); }
+
+  .rules-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 14px 24px; border-bottom: 1px solid #eef1f4; align-items: center; }
+  .rules-legend .rchip { cursor: default; }
+  .rules-legend .lg-note { font-size: 12.5px; color: #6a7a8a; }
+
+  .rules-body { padding: 6px 24px 8px; }
+  .rule-row { display: grid; grid-template-columns: 42px 1fr; gap: 14px; padding: 15px 0; border-bottom: 1px solid #f0f2f5; }
+  .rule-row:last-child { border-bottom: none; }
+  .rule-row .rno {
+    font-variant-numeric: tabular-nums; font-weight: 700; font-size: 15px; color: #1a7f45;
+    background: #f0fff4; border: 1px solid #c6f0d4; border-radius: 9px;
+    height: 38px; display: flex; align-items: center; justify-content: center; align-self: start;
+  }
+  .rule-row .rtop { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 3px; }
+  .rule-row h4 { font-size: 15px; font-weight: 650; line-height: 1.32; }
+  .rule-row p { font-size: 13.5px; color: #55606f; line-height: 1.5; }
+  .rule-row code, .rules-keys code {
+    font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
+    background: #f5f7fa; border: 1px solid #e6e9ee; border-radius: 4px; padding: 0 4px; color: #2d3a4a;
+    white-space: nowrap;
+  }
+  .rchip {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700;
+    letter-spacing: 0.03em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .rchip .rdot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .rchip-err { background: #fde8e8; color: #b91c1c; }
+  .rchip-warn { background: #fef3c7; color: #92400e; }
+  .rchip-dual { background: #f5f7fa; color: #55606f; border: 1px solid #e6e9ee; }
+
+  .rules-keys { padding: 18px 24px 24px; border-top: 1px solid #eef1f4; background: #fbfcfd; }
+  .rules-keys h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: #8a93a1; margin-bottom: 12px; }
+  .rules-keys ul { list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px 18px; }
+  .rules-keys li { font-size: 13px; color: #55606f; }
+  .rules-keys code { color: #1a7f45; font-weight: 600; margin-right: 6px; }
+  @media (max-width: 560px){ .rule-row { grid-template-columns: 34px 1fr; gap: 10px; } }
 </style>
 </head>
 <body>
@@ -166,7 +234,41 @@
   <div>🩺</div>
   <h1>3870 LF477 Template Pre-Check</h1>
   <span>Pre-Check Templates from Pharmacist</span>
+  <button id="rules-btn" class="rules-btn" type="button" aria-haspopup="dialog">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+    Rules reference
+  </button>
 </header>
+
+<div id="rules-modal" class="rules-overlay" hidden>
+  <div class="rules-panel" role="dialog" aria-modal="true" aria-label="Rule reference">
+    <div class="rules-head">
+      <div>
+        <h2>Rule reference</h2>
+        <p>What each check looks for. Numbered to match the results — find a flagged rule by its number.</p>
+      </div>
+      <button id="rules-close" class="rules-close" type="button" aria-label="Close">✕</button>
+    </div>
+    <div class="rules-legend">
+      <span class="rchip rchip-err"><span class="rdot"></span>Error · fix before validation</span>
+      <span class="rchip rchip-warn"><span class="rdot"></span>Warning · review, may be intentional</span>
+      <span class="lg-note" id="rules-count"></span>
+    </div>
+    <div id="rules-body" class="rules-body"></div>
+    <div class="rules-keys">
+      <h4>Column key</h4>
+      <ul>
+        <li><code>B</code>Care Area</li><li><code>C</code>Drug Name</li><li><code>D</code>Dosing Name</li>
+        <li><code>E</code>Conc Unit</li><li><code>F</code>Conc Amount</li><li><code>G</code>Diluent Unit</li>
+        <li><code>H</code>Diluent Amount</li><li><code>I</code>Primary Dose Unit</li><li><code>J–N</code>Primary dose + limits</li>
+        <li><code>O–S</code>Primary time limits</li><li><code>T</code>Bolus Dose Unit</li><li><code>U–Y</code>Bolus limits</li>
+        <li><code>Z–AD</code>Bolus time limits</li><li><code>AE</code>Loading Dose Unit</li><li><code>AF–AJ</code>Loading limits</li>
+        <li><code>AK–AO</code>Loading time limits</li><li><code>AP–AS</code>Weight limits</li><li><code>AT</code>KVO Mode</li>
+        <li><code>AU</code>KVO Rate</li><li><code>AV</code>Quick Recall</li>
+      </ul>
+    </div>
+  </div>
+</div>
 
 <div class="container">
 
@@ -1675,6 +1777,62 @@ dropZone.addEventListener('drop', e => {
   processFile(e.dataTransfer.files[0]);
 });
 document.getElementById('file-input').addEventListener('change', e => processFile(e.target.files[0]));
+
+// ─── Rules reference help panel ────────────────────────────────────────────────
+// Plain-language description per rule. The panel itself is built from RULE_INFO (titles +
+// severity) so it always matches the rules that actually run.
+const RULE_DESC = {
+  1:'The same Drug Name + Dosing Name appears more than once in one care area. Every combination must be unique.',
+  2:'When the Primary Dose Unit is mL-based (<code>mL</code>, <code>mL/hr</code>…), the concentration fields <code>E–H</code> must be blank.',
+  3:'Within Primary, Bolus, Loading, or Weight, limits must step down: Upper Hard ≥ Upper Soft ≥ Initial ≥ Lower Soft ≥ Lower Hard.',
+  4:'A dose or limit value is finer than <code>0.001</code> (more than three decimal places).',
+  5:'A required cell is blank — Care Area, Drug Name, Dosing Name, Primary Dose Unit, or KVO Mode (plus Quick Recall when that column is present).',
+  6:'When KVO Mode is <code>Rate</code>, the KVO Rate must be filled and between <code>0.4–20 mL/hr</code>.',
+  7:'When KVO Mode is <code>Off</code> or <code>Continue Primary Rate</code>, the KVO Rate must be empty.',
+  8:'A weight limit falls outside <code>0.1–350 kg</code>.',
+  9:'A Care Area, Drug, or Dosing name is too long to fully fit the pump screen; the characters that would be cut off are shown in red.',
+  10:'The pump lists dosing names alphabetically, which can differ from the order you entered (e.g. <code>10</code> before <code>2</code>). Suggests leading spaces to line them up.',
+  11:'A time-limit column holds something that isn’t a valid duration — text, or a number that’s really a rate. Use an <code>hh:mm:ss</code> duration.',
+  12:'Conc Unit <code>E</code> is filled but both Conc Amount <code>F</code> and Diluent Amount <code>H</code> are blank. Add the numbers, or clear <code>E</code> for a wildcard concentration.',
+  13:'The pump also lists drug names alphabetically, which can differ from entry order. Shows entered vs pump order so there are no surprises on screen.',
+  14:'A drug name looks like a misspelling of a known drug; suggests the correct spelling and highlights the wrong letters.',
+  15:'The Primary unit is mL-based but a Bolus/Loading unit isn’t (or the reverse). mL dose units are only compatible with other mL units.',
+  16:'Bolus or Loading fields are filled in, but the Primary Dose Unit isn’t a rate (<code>/min</code> or <code>/hr</code>). Those fields should be blank unless the primary is rate-based.',
+  17:'KVO Rate <code>AU</code> must be blank or a number between <code>0.4–20 mL/hr</code>, whatever the KVO Mode. Also catches text entered here.',
+  18:'Conc Amount <code>F</code> and Diluent Amount <code>H</code> must be a number or blank — no letters or units. The unit belongs in <code>E</code>/<code>G</code>.',
+  19:'Conc Unit <code>E</code> and Diluent Unit <code>G</code> must be unit text or blank — no numbers. The number belongs in <code>F</code>/<code>H</code>.',
+  20:'Compares the concentration written in the Dosing Name to what’s entered in <code>E–H</code>. <b style="color:#b91c1c">Red</b> = they don’t match; <b style="color:#92400e">Yellow</b> = different numbers but the same final concentration.',
+  21:'Dose Unit columns <code>I</code> <code>T</code> <code>AE</code> and KVO Mode <code>AT</code> must be text or blank — no numbers.',
+  22:'The dose, limit, and weight columns (<code>J–N</code> <code>U–Y</code> <code>AF–AJ</code> <code>AP–AS</code>) must be a number or blank — no letters.',
+  23:'A dose unit’s time part looks like a typo of <code>min</code> — e.g. <code>mcg/kg/kin</code>.',
+  24:'A unit looks like a typo of <code>unit</code>/<code>units</code> — e.g. <code>uniit</code>. Valid units like <code>milliunits</code>/<code>mUnits</code> are recognized.',
+  25:'Two drug entries in one care area match except for capital letters or spacing (e.g. <code>Shock</code> vs <code>SHOCK</code>). The pump lists them as separate drugs — pick one spelling.',
+};
+(function buildRulesPanel(){
+  const body = document.getElementById('rules-body');
+  const nums = Object.keys(RULE_INFO).map(Number).sort((a,b)=>a-b);
+  let errN = 0, warnN = 0;
+  body.innerHTML = nums.map(n => {
+    const info = RULE_INFO[n];
+    const title = info.title.replace(/^Rule \d+ — /, '');
+    let chip;
+    if (n === 20) { chip = '<span class="rchip rchip-dual">Error / Warning</span>'; errN++; }
+    else if (info.severity === 'warn') { warnN++; chip = '<span class="rchip rchip-warn"><span class="rdot"></span>Warning</span>'; }
+    else { errN++; chip = '<span class="rchip rchip-err"><span class="rdot"></span>Error</span>'; }
+    return `<div class="rule-row"><div class="rno">${n}</div><div>
+      <div class="rtop"><h4>${escHtml(title)}</h4>${chip}</div>
+      <p>${RULE_DESC[n] || ''}</p></div></div>`;
+  }).join('');
+  document.getElementById('rules-count').textContent = `${errN} errors · ${warnN} warnings`;
+})();
+
+const rulesModal = document.getElementById('rules-modal');
+function openRules(){ rulesModal.hidden = false; document.body.style.overflow = 'hidden'; document.getElementById('rules-close').focus(); }
+function closeRules(){ rulesModal.hidden = true; document.body.style.overflow = ''; }
+document.getElementById('rules-btn').addEventListener('click', openRules);
+document.getElementById('rules-close').addEventListener('click', closeRules);
+rulesModal.addEventListener('click', e => { if (e.target === rulesModal) closeRules(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !rulesModal.hidden) closeRules(); });
 </script>
 </body>
 </html>
