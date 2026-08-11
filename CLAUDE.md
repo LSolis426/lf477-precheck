@@ -138,24 +138,22 @@ Weight limit columns (AP–AS) must be between 0.1 and 999 kg if filled.
 ### Rule 9 — Name Too Long for Display Field
 Care Area, Drug Name, and Dosing Name each have a physical pixel-width limit on the pump screen. Each character has a known capacity (how many of that character fit):
 
-- **Flagging threshold:** fill ratio > **1.20** (shared constant `NAME_FIT_THRESHOLD`, used for both the flag and the red-overflow split). Raised from 1.13 in 2026 after emulator-confirmed fits up to 1.176 (see below).
-- **Split threshold for highlighting:** same `NAME_FIT_THRESHOLD` (1.20)
+- **Flagging threshold:** fill ratio > **1.115** (shared constant `NAME_FIT_THRESHOLD`, used for both the flag and the red-overflow split).
+- **Split threshold for highlighting:** same `NAME_FIT_THRESHOLD` (1.115)
 - **Display:** The Issue cell shows the name with a monospace font; characters that fit are normal, characters that overflow are **red with underline**. Hovering shows tooltip.
 
-Character capacities are Tallman-lettering aware (uppercase and lowercase have separate tables). Unknown characters (digits, spaces, symbols) default to capacity 20.
+Character capacities are Tallman-lettering aware (uppercase and lowercase have separate tables). Non-letter characters (digits, spaces, symbols) use `OTHER_CAP` = **28** (they're narrower than most letters, so more fit per line).
 
-**Calibration data points (confirmed fitting on actual pump):**
-- `"EPINEPHrine mcg/kg/mi"` fits (ratio 1.027)
-- `"NORepinephrine mcg/kg"` fits (ratio 1.023)
-- `"NORepinephrine mcg/mi"` fits (ratio 1.036)
-- `"EPINEPHrine mcg/kg/min"` fits (ratio 1.077)
-- `"NORepinephrine mcg/kg/"` fits (ratio 1.073)
-- `"NORepinephrine mcg/min"` fits (ratio 1.086)
-- `"NORepinephri mcg/kg/mn"` fits (ratio 1.104)
-- `" Wt Based: 0.075 mg/mL"` fits (ratio 1.134, **confirmed in the pump emulator 2026** — note the leading space; without it the string is only 1.017). The old 1.13 threshold produced a false positive on this real, fitting name.
-- `" Wt Based: 0.075 mg/mLa"` fits (ratio 1.176, **emulator-confirmed** — the same name with an extra character typed after it still fit, showing additional headroom). This is why the threshold was raised to **1.20**.
+**Model calibration — the digit-vs-letter problem (2026).** Two confirmed pump behaviors could NOT both be satisfied by any single threshold with the old model (`OTHER_CAP` = 20):
+- Digit/punctuation-heavy `" Wt Based: 0.075 mg/mLa"` **fit** entirely (emulator-confirmed) — implied capacity ≥ ~1.18 in the old model.
+- Letter-heavy `"Midazolam-status epilepticus"` **truncated to `…epileptic`** on the pump (the `us` was cut), and `"Ketamine-status epilepticus"` **truncated to `…epilepticu`** (the `s` cut) — implied capacity ~1.13–1.16 in the old model.
 
-For `"NORepinephrine mcg/kg/min"` (ratio 1.232, still > 1.20 → correctly flagged), the split shows fits=`"NORepinephrine mcg/kg/"` over=`"min"`. The threshold 1.20 sits midway between the highest confirmed fit (1.176) and the lowest confirmed overflow (1.232). If more real fit/overflow data points emerge, adjust `NAME_FIT_THRESHOLD` accordingly (a single number now drives both the flag and the highlight).
+The fix: the old model treated digits/punctuation/spaces as the same width as a medium letter (capacity 20). They're actually narrower, so `OTHER_CAP` was raised to **28**. That lowers the ratio of digit-heavy names (they fit more easily) while barely moving letter-heavy names, opening a single valid window. `NAME_FIT_THRESHOLD` = **1.115** sits inside it and, verified through the real `validate()`/`buildOverflowHtml`, reproduces every confirmed point:
+- FITS (not flagged): `" Wt Based: 0.075 mg/mL"` (0.98), `" Wt Based: 0.075 mg/mLa"` (1.02), `"NORepinephri mcg/kg/mn"` (1.06).
+- OVERFLOW (flagged): `"NORepinephrine mcg/kg/min"` (1.19).
+- Exact truncation reproduced: `"Midazolam-status epileptic|us"` and `"Ketamine-status epilepticu|s"` — the red split falls precisely where the pump cut.
+
+(All ratios above are in the **new** `OTHER_CAP`=28 model, so they differ from the pre-2026 figures.) Validated across the Ascension file (315 names, no new false positives) and Bryn Mawr (correctly adds the previously-missed Ketamine). If more real fit/overflow points emerge, prefer adjusting `OTHER_CAP` and/or the specific letter capacities before moving the threshold — a single number can't fix a per-character-width error.
 
 ### Rule 10 — Alphabetical Order May Surprise Clinicians
 Within each care area + drug group, dosing names are sorted two ways:
