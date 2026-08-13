@@ -211,8 +211,10 @@ and confusing. Detection: drug names are grouped per `(sheet, care area)` by a n
 (`trim` + collapse internal whitespace + `toLowerCase`); any key with 2+ distinct raw spellings is
 flagged. It renders as a bordered group (like Rule 1) with a small table listing **every spelling
 as entered and its Excel rows** — so both `vasopressin -   Shock` (its rows) and `vasopressin -   SHOCK`
-(its rows) appear under Drug Name side by side. Spellings render with `white-space:pre-wrap` so spacing
-differences stay visible. Scoped per care area (same name in different care areas is fine — separate lists). Note Rule 13's own drug list intentionally de-dupes case-insensitively, so
+(its rows) appear under Drug Name side by side. Each name is passed through `revealWs()`, which renders
+in monospace and shows **every space as a visible amber dot** (`·`) plus a "(leading/trailing space)"
+note — so an otherwise-invisible trailing space (e.g. `NORepinephrine ` vs `NORepinephrine`) is obvious.
+Scoped per care area (same name in different care areas is fine — separate lists). Note Rule 13's own drug list intentionally de-dupes case-insensitively, so
 it would *hide* this collision — Rule 25 is the dedicated check. Severity: warn. Verified against the
 Connecticut Children's 07.24.26 file: flags exactly the vasopressin `Shock`/`SHOCK` group (No-Z,
 rows 34–36 vs 37–38) and nothing else.

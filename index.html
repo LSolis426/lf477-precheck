@@ -220,6 +220,16 @@
   .rchip-warn { background: #fef3c7; color: #92400e; }
   .rchip-dual { background: #f5f7fa; color: #55606f; border: 1px solid #e6e9ee; }
 
+  /* Rule 25 whitespace reveal */
+  .ws-name { font-family: ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; }
+  .ws-dot {
+    display: inline-block; width: 0.7ch; text-align: center; color: #b45309;
+    background: #fef3c7; border: 1px solid #f0d488; border-radius: 3px; margin: 0 0.5px;
+    font-weight: 700; line-height: 1;
+  }
+  .ws-note { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 11px; color: #b45309; font-style: italic; white-space: nowrap; }
+
   .rules-keys { padding: 18px 24px 24px; border-top: 1px solid #eef1f4; background: #fbfcfd; }
   .rules-keys h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: #8a93a1; margin-bottom: 12px; }
   .rules-keys ul { list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px 18px; }
@@ -1615,7 +1625,7 @@ function renderResults(issues) {
                 ${issue.variants.map(v => `
                   <tr>
                     <td><span class="sheet-tag">${escHtml(issue.sheet)}</span></td>
-                    <td class="drug-col"><span style="white-space:pre-wrap">${escHtml(v.name)}</span></td>
+                    <td class="drug-col">${revealWs(v.name)}</td>
                     <td class="dup-row-num">${v.rows.join(', ')}</td>
                   </tr>`).join('')}
               </tbody>
@@ -1733,6 +1743,19 @@ function escHtml(str) {
   return String(str || '')
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/"/g,'&quot;');
+}
+
+// Renders a string with every space shown as a visible amber dot, so leading / trailing /
+// double spaces (invisible in normal text) are obvious. Used by Rule 25.
+function revealWs(str) {
+  const s = String(str);
+  const html = escHtml(s).replace(/ /g, '<span class="ws-dot" title="space">·</span>');
+  const lead = /^\s/.test(s), trail = /\s$/.test(s);
+  let note = '';
+  if (lead && trail) note = ' <span class="ws-note">(leading + trailing space)</span>';
+  else if (trail)    note = ' <span class="ws-note">(trailing space)</span>';
+  else if (lead)     note = ' <span class="ws-note">(leading space)</span>';
+  return `<span class="ws-name">${html}</span>${note}`;
 }
 
 // Wraps wrong-position characters in yellow highlight spans.
