@@ -138,8 +138,8 @@ Weight limit columns (AP–AS) must be between 0.1 and 999 kg if filled.
 ### Rule 9 — Name Too Long for Display Field
 Care Area, Drug Name, and Dosing Name each have a physical pixel-width limit on the pump screen. Each character has a known capacity (how many of that character fit):
 
-- **Flagging threshold:** fill ratio > **1.115** (shared constant `NAME_FIT_THRESHOLD`, used for both the flag and the red-overflow split).
-- **Split threshold for highlighting:** same `NAME_FIT_THRESHOLD` (1.115)
+- **Flagging threshold:** fill ratio > **1.063** (shared constant `NAME_FIT_THRESHOLD`, used for both the flag and the red-overflow split). Set to the conservative edge — see the calibration note below. The Rule 9 section header carries a reminder to **verify flagged names in the emulator** before acting.
+- **Split threshold for highlighting:** same `NAME_FIT_THRESHOLD` (1.063)
 - **Display:** The Issue cell shows the name with a monospace font; characters that fit are normal, characters that overflow are **red with underline**. Hovering shows tooltip.
 
 Character capacities are Tallman-lettering aware (uppercase and lowercase have separate tables). Non-letter characters (digits, spaces, symbols) use `OTHER_CAP` = **28** (they're narrower than most letters, so more fit per line).
@@ -154,6 +154,8 @@ The fix: the old model treated digits/punctuation/spaces as the same width as a 
 - Exact truncation reproduced: `"Midazolam-status epileptic|us"` and `"Ketamine-status epilepticu|s"` — the red split falls precisely where the pump cut.
 
 (All ratios above are in the **new** `OTHER_CAP`=28 model, so they differ from the pre-2026 figures.) Validated across the Ascension file (315 names, no new false positives) and Bryn Mawr (correctly adds the previously-missed Ketamine). If more real fit/overflow points emerge, prefer adjusting `OTHER_CAP` and/or the specific letter capacities before moving the threshold — a single number can't fix a per-character-width error.
+
+**The model has an accuracy ceiling (2026).** A later template (MLK) added `"…(concentrated)"` names whose confirmed pump truncations proved the heuristic **cannot be made pixel-perfect**: the ground-truth boundaries are mutually inconsistent under this character model (e.g. `"NORepinephrine ICU (conc"` *fits* at model-1.089 while `"LORazepam (concentrated)"` *truncates its ")"* at model-1.066 — the model ranks a fitting string above a truncating one). Adjusting parenthesis width or any single letter can't separate them. So the threshold was lowered to the **conservative** value **1.063** — just below the shortest confirmed truncation (`LORazepam` 1.066) and just above the tallest whole-name fit (`NORepinephri mcg/kg/mn` 1.061). Consequences, all acceptable for a warning-severity check: it catches every confirmed truncation (fixed the previously-missed `LORazepam`), the red region may **over-mark by ~1 char** (safe direction — e.g. `NORepinephrine ICU (con|centrated)` vs the pump's `(conc|entrated)`), and measured flag counts barely change on real files (MLK +1 = the LORazepam catch; HonorHealth/Ascension +0; Bryn Mawr +1 = a genuinely long name). The Rule 9 header now tells users to confirm flagged names in the emulator — the emulator is the source of truth, this check just surfaces candidates.
 
 ### Rule 10 — Alphabetical Order May Surprise Clinicians
 Within each care area + drug group, dosing names are sorted two ways:
