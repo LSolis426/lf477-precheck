@@ -103,6 +103,8 @@ Within the same care area (same sheet + same col B value), every Drug Name + Dos
 
 **Key detail:** Propofol in ICU and Propofol in ANES on the same sheet is *not* a duplicate — keyed by `(sheet, care area, drug, dosing)`.
 
+**Key detail:** rows where **both** Drug Name and Dosing Name are blank are skipped entirely (not collected into `dupGroups`). Templates often have many empty rows under a filled-down Care Area; those share an empty drug/dosing key and would otherwise be reported as a big bogus "Duplicate: / —" set. A row is only a duplicate candidate if it has a drug name and/or a dosing name.
+
 ### Rule 2 — mL-based Unit with Concentration Data
 If Primary Dose Unit (col I) is mL-based (`mL`, `mL/hr`, `mL/min`, etc.), columns E–H must be blank. Flags each non-blank concentration field individually.
 

@@ -642,9 +642,13 @@ function validate(workbook) {
       const loc = { sheet: sheetName, row: excelRow, care: careArea, drug: drugName, dosing: dosingName };
 
       // ── Rule 1: Collect all rows per care-area + drug + dosing key ───────
-      const pairKey = `${sheetName}||${String(careArea||'').trim().toLowerCase()}||${String(drugName||'').trim().toLowerCase()}||${String(dosingName||'').trim().toLowerCase()}`;
-      if (!dupGroups.has(pairKey)) dupGroups.set(pairKey, []);
-      dupGroups.get(pairKey).push(loc);
+      // Skip rows where BOTH Drug Name and Dosing Name are blank — those are empty template
+      // rows (not real drug entries), so a shared empty key isn't a meaningful duplicate.
+      if (!isEmpty(drugName) || !isEmpty(dosingName)) {
+        const pairKey = `${sheetName}||${String(careArea||'').trim().toLowerCase()}||${String(drugName||'').trim().toLowerCase()}||${String(dosingName||'').trim().toLowerCase()}`;
+        if (!dupGroups.has(pairKey)) dupGroups.set(pairKey, []);
+        dupGroups.get(pairKey).push(loc);
+      }
 
       // ── Rule 10: Collect dosing names per (sheet, care area, drug) ───────
       const ordKey = `${sheetName}|||${String(careArea||'').trim()}|||${String(drugName||'').trim()}`;
