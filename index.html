@@ -618,21 +618,35 @@ function validate(workbook) {
     const hasQuickRecall = range.e.c >= 47;
 
     // Sheets where every drug entry is a "Rate Mode" placeholder (e.g. a BASIC care area) don't get
-    // the drug-library checks — but KVO Mode (col AT) and Quick Recall (col AV) are STILL required on
-    // each entry, so run just that required-field check here, then skip the rest of the checks.
+    // the drug-library checks (concentration, limits, spelling, …). But a few still apply: KVO Mode
+    // (col AT) and Quick Recall (col AV) are required (Rule 5), and these entries still form the pump's
+    // drug list, which it alphabetizes — so the display-order checks (Rules 10 & 13) run too.
     const rowsWithDrug = data.slice(3).filter(r => r && !r.every(isEmpty) && !isEmpty(r[C.DRUG_NAME]));
     if (rowsWithDrug.length > 0 &&
         rowsWithDrug.every(r => String(r[C.DRUG_NAME]).trim().toLowerCase().startsWith('rate mode'))) {
+      let caFill = null;
       for (let ri = 3; ri < data.length; ri++) {
         const row = data[ri] || [];
+        if (!isEmpty(row[C.CARE_AREA])) caFill = row[C.CARE_AREA]; // care area fills down
         if (isEmpty(row[C.DRUG_NAME])) continue;
-        const loc = { sheet: sheetName, row: ri + 1, care: row[C.CARE_AREA], drug: row[C.DRUG_NAME], dosing: row[C.DOSING_NAME] };
+        const care = caFill;
+        const loc = { sheet: sheetName, row: ri + 1, care, drug: row[C.DRUG_NAME], dosing: row[C.DOSING_NAME] };
+        // Rule 5 — required fields still apply to Rate Mode entries
         if (isEmpty(row[C.KVO_MODE])) allIssues.push({ rule: 5, ...loc, msg: 'KVO Mode (col AT) is empty' });
         if (hasQuickRecall && isEmpty(row[C.QUICK_RCL])) {
           allIssues.push({ rule: 5, ...loc, msg: 'Quick Recall (col AV) is empty — required when this column is present' });
         }
+        // Rules 10 & 13 — feed the pump display-order checks (drug list gets alphabetized).
+        const ordKey = `${sheetName}|||${String(care||'').trim()}|||${String(row[C.DRUG_NAME]||'').trim()}`;
+        if (!dosingGroups.has(ordKey)) dosingGroups.set(ordKey, []);
+        dosingGroups.get(ordKey).push({ dosing: String(row[C.DOSING_NAME]||''), row: ri + 1 });
+        const caKey13 = `${sheetName}|||${String(care||'').trim()}`;
+        if (!drugOrderMap.has(caKey13)) drugOrderMap.set(caKey13, { sheet: sheetName, care, drugs: [] });
+        const d13 = drugOrderMap.get(caKey13);
+        const dn = String(row[C.DRUG_NAME]).trimEnd();
+        if (!d13.drugs.some(x => x.name.toLowerCase() === dn.toLowerCase())) d13.drugs.push({ name: dn, row: ri + 1 });
       }
-      continue; // Rate-Mode-only sheet — drug-library checks don't apply, but AT/AV were checked above
+      continue; // Rate-Mode-only sheet — drug-library checks skipped; Rules 5/10/13 handled above
     }
 
     // Data rows start at index 3 (Excel row 4)
