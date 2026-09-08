@@ -920,6 +920,26 @@ function validate(workbook) {
       for (const { idx, label } of TIME_COLS) {
         const v = row[idx];
         if (isEmpty(v)) continue;
+
+        // Which section (and its dose-unit column) does this time column belong to?
+        let sectionName = null, sectionUnitIdx = null;
+        if      (idx >= 14 && idx <= 18) { sectionName = 'Primary'; sectionUnitIdx = C.PRI_UNIT; }
+        else if (idx >= 25 && idx <= 29) { sectionName = 'Bolus';   sectionUnitIdx = C.BOL_UNIT; }
+        else if (idx >= 36 && idx <= 40) { sectionName = 'Loading'; sectionUnitIdx = C.LOD_UNIT; }
+
+        // If the section's Dose Unit is rate-based (/min or /hr), time limits can't be programmed
+        // at all — the column must be blank. This is the root cause: flag any real value (a string
+        // or a positive number) and skip the format checks below. A 0 / negative is blank-equivalent
+        // (the column is simply unused), so it's left un-flagged.
+        if (sectionUnitIdx != null && isRateBasedUnit(row[sectionUnitIdx])) {
+          if (typeof v === 'string' || (typeof v === 'number' && v > 0)) {
+            allIssues.push({ rule: 11, ...loc,
+              msg: `Col ${label} has a value, but ${sectionName} Dose Unit (col ${sectionUnitIdx === C.PRI_UNIT ? 'I' : sectionUnitIdx === C.BOL_UNIT ? 'T' : 'AE'}) = "${row[sectionUnitIdx]}" is rate-based (/min or /hr). ${sectionName} time limits cannot be programmed on the pump when the dose unit is per-minute or per-hour — this column must be left blank.`
+            });
+          }
+          continue;
+        }
+
         if (typeof v === 'string') {
           allIssues.push({ rule: 11, ...loc,
             msg: `Col ${label} contains "${v}" — this looks like a rate from another pump system. Must be hh:mm:ss time duration (how long the bolus/infusion should run), not a rate or text.`
@@ -1840,7 +1860,7 @@ const RULE_DESC = {
   8:'A weight limit falls outside <code>0.1–350 kg</code>.',
   9:'A Care Area, Drug, or Dosing name is too long to fully fit the pump screen; the characters that would be cut off are shown in red.',
   10:'The pump lists dosing names alphabetically, which can differ from the order you entered (e.g. <code>10</code> before <code>2</code>). Suggests leading spaces to line them up.',
-  11:'A time-limit column holds something that isn’t a valid duration — text, or a number that’s really a rate. Use an <code>hh:mm:ss</code> duration.',
+  11:'A time-limit column holds something that isn’t a valid duration — text, or a number that’s really a rate. Use an <code>hh:mm:ss</code> duration. Also flags any time limit entered when that section’s Dose Unit (<code>I</code>/<code>T</code>/<code>AE</code>) is rate-based (<code>/min</code> or <code>/hr</code>) — time limits can’t be programmed then, so the column must be blank.',
   12:'Conc Unit <code>E</code> is filled but both Conc Amount <code>F</code> and Diluent Amount <code>H</code> are blank. Add the numbers, or clear <code>E</code> for a wildcard concentration.',
   13:'The pump also lists drug names alphabetically, which can differ from entry order. Shows entered vs pump order so there are no surprises on screen.',
   14:'A drug name looks like a misspelling of a known drug; suggests the correct spelling and highlights the wrong letters.',

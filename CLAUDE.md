@@ -329,6 +329,16 @@ Flags:
 
 Valid: any number `0 < v ≤ 1` (Excel time fraction). Example: 10 minutes = `0.006944`.
 
+**Rate-based root-cause check (takes precedence).** Each time-column block belongs to a section whose
+Dose Unit is Primary (col I → O–S), Bolus (col T → Z–AD), or Loading (col AE → AK–AO). If that section's
+Dose Unit is **rate-based** (`isRateBasedUnit` → ends in `/min` or `/hr`), a time limit **cannot be
+programmed at all** — the pump only uses time limits when the dose unit is *not* per-min/per-hr (the
+template header says exactly this). So any real value (a string or a positive number) in that section's
+time columns is flagged with a "rate-based → must be blank" message, and the format checks above are
+skipped for that cell (no confusing "exceeds 24 hours" on top). A `0`/negative is blank-equivalent (the
+column is simply unused) and is not flagged. This catches e.g. milrinone with Primary Dose Unit
+`mcg/kg/min` and values in cols R/S — the root cause is the rate-based unit, not the number's size.
+
 ---
 
 ## Key JS Functions
