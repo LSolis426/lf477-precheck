@@ -121,6 +121,8 @@ These must never be blank: Care Area (B), Drug Name (C), Dosing Name (D), Primar
 
 **Key detail:** the whole check is skipped for rows where **both** Drug Name and Dosing Name are blank — an empty template row isn't a drug entry, so nothing is "missing" (this mirrors Rule 1). A row with a Drug Name *or* a Dosing Name is still a real entry and its other required fields are checked (e.g. a drug with a blank dosing still flags "Dosing Name empty"). Without this, a template's many trailing blank rows produced ~5 bogus "empty" issues each (184 on the Tift Regional file → 0 after the fix).
 
+**Key detail — Rate-Mode-only sheets (e.g. a `BASIC` care area):** a sheet whose every drug entry starts with `"Rate Mode"` is exempt from the drug-library checks (no concentration/limits/etc.), but **KVO Mode (col AT) and Quick Recall (col AV) are still required** on each Rate Mode entry. So the sheet-skip in the validate loop runs a focused Rule 5 pass for AT/AV before `continue`-ing past the other rules. (Previously the whole sheet was skipped, so missing AT/AV on a BASIC sheet went uncaught — reported on the Tift Regional file.)
+
 ### Rule 6 — KVO Rate Missing or Out of Range
 When KVO Mode (AT) = `"Rate"` (case-insensitive), KVO Rate (AU) must be present and between **0.4 and 20 mL/hr**.
 
