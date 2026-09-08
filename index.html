@@ -679,13 +679,17 @@ function validate(workbook) {
       }
 
       // ── Rule 5: Required fields ───────────────────────────────────────────
-      if (isEmpty(careArea))   allIssues.push({ rule: 5, ...loc, msg: 'Care Area Name (col B) is empty' });
-      if (isEmpty(drugName))   allIssues.push({ rule: 5, ...loc, msg: 'Drug Name (col C) is empty' });
-      if (isEmpty(dosingName)) allIssues.push({ rule: 5, ...loc, msg: 'Dosing Name (col D) is empty' });
-      if (isEmpty(row[C.PRI_UNIT]))  allIssues.push({ rule: 5, ...loc, msg: 'Primary Dose Unit (col I) is empty' });
-      if (isEmpty(row[C.KVO_MODE])) allIssues.push({ rule: 5, ...loc, msg: 'KVO Mode (col AT) is empty' });
-      if (hasQuickRecall && isEmpty(row[C.QUICK_RCL])) {
-        allIssues.push({ rule: 5, ...loc, msg: 'Quick Recall (col AV) is empty — required when this column is present' });
+      // Only check rows that are actually a drug entry (a Drug Name and/or Dosing Name present).
+      // Rows with both blank are empty template rows — nothing is "missing" on an unused row.
+      if (!isEmpty(drugName) || !isEmpty(dosingName)) {
+        if (isEmpty(careArea))   allIssues.push({ rule: 5, ...loc, msg: 'Care Area Name (col B) is empty' });
+        if (isEmpty(drugName))   allIssues.push({ rule: 5, ...loc, msg: 'Drug Name (col C) is empty' });
+        if (isEmpty(dosingName)) allIssues.push({ rule: 5, ...loc, msg: 'Dosing Name (col D) is empty' });
+        if (isEmpty(row[C.PRI_UNIT]))  allIssues.push({ rule: 5, ...loc, msg: 'Primary Dose Unit (col I) is empty' });
+        if (isEmpty(row[C.KVO_MODE])) allIssues.push({ rule: 5, ...loc, msg: 'KVO Mode (col AT) is empty' });
+        if (hasQuickRecall && isEmpty(row[C.QUICK_RCL])) {
+          allIssues.push({ rule: 5, ...loc, msg: 'Quick Recall (col AV) is empty — required when this column is present' });
+        }
       }
 
       // ── Rule 2: mL-based Primary Dose Unit → cols E–H must be blank ──────
