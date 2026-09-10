@@ -210,6 +210,8 @@ Within each care area (sheet + col B), the pump displays drug names in alphabeti
 
 Display: side-by-side "Template entry order" vs "Pump will show (alphabetical)", with drugs that changed position highlighted. Also flags drug names starting with a non-alphanumeric character (those float before A–Z on the pump screen). Severity: warn.
 
+Drug names render through `revealOddWs()`, which marks **odd whitespace** (leading, trailing, or runs of 2+ spaces) as amber `·` dots while leaving ordinary single spaces plain. This exposes the invisible cause of many surprising reorders: a space (code 32) sorts before punctuation/letters, so e.g. `FentaNYL  > 50 kg` (a **double** space) sorts *before* `FentaNYL < 50 kg` — the second space beats the `<` (60) — flipping the two even though `<` normally precedes `>`. Without the dots the names look identical and the flip is baffling. Fix in the template = remove the stray space.
+
 ### Rule 26 — Dosing Names Not in Number Order (smallest → largest)
 A template-organization QA check (distinct from Rules 10/13, which are about what the *pump* displays):
 within each drug (Care Area + Drug Name, **Rate Mode ignored**), the Dosing Names (col D) should be

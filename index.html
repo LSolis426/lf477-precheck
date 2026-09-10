@@ -1649,13 +1649,13 @@ function renderResults(issues) {
           const templateRows = issue.drugs.map((e, ti) => {
             const pi = alphaKeySet.indexOf(e.name.toLowerCase());
             const moved = pi !== ti;
-            return `<div class="ord-entry ${moved ? 'moved' : 'same'}">${escHtml(e.name)}<span class="row-chip">Row ${e.row}</span></div>`;
+            return `<div class="ord-entry ${moved ? 'moved' : 'same'}">${revealOddWs(e.name)}<span class="row-chip">Row ${e.row}</span></div>`;
           }).join('');
 
           const pumpRows = issue.alphaOrder.map((e, pi) => {
             const ti = templateKeySet.indexOf(e.name.toLowerCase());
             const moved = pi !== ti;
-            return `<div class="ord-entry ${moved ? 'moved' : 'same'}">${escHtml(e.name)}<span class="row-chip">Row ${e.row}</span></div>`;
+            return `<div class="ord-entry ${moved ? 'moved' : 'same'}">${revealOddWs(e.name)}<span class="row-chip">Row ${e.row}</span></div>`;
           }).join('');
 
           let symbolHtml = '';
@@ -1872,6 +1872,24 @@ function escHtml(str) {
     .replace(/"/g,'&quot;');
 }
 
+// Renders a string but marks only ODD whitespace as a visible amber dot: leading spaces, trailing
+// spaces, and runs of 2+ spaces. Ordinary single word-separator spaces stay plain. Used by the
+// order rules (10/13) to reveal an invisible extra/leading space that changes the pump sort.
+function revealOddWs(str) {
+  const s = String(str);
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === ' ') {
+      const leading  = s.slice(0, i).trim() === '';
+      const trailing = s.slice(i + 1).trim() === '';
+      const inRun    = s[i - 1] === ' ' || s[i + 1] === ' ';
+      out += (leading || trailing || inRun)
+        ? '<span class="ws-dot" title="space">·</span>' : ' ';
+    } else out += escHtml(ch);
+  }
+  return out;
+}
 // Renders a string with every space shown as a visible amber dot, so leading / trailing /
 // double spaces (invisible in normal text) are obvious. Used by Rule 25.
 function revealWs(str) {
