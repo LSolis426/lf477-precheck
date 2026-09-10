@@ -1377,6 +1377,28 @@ function validate(workbook) {
     }
   }
 
+  // ── Rule 26 finalization: dosing names within a drug should be smallest → largest by number ──
+  // Only checks drugs whose dosing names are ALL numeric-leading (e.g. "8mg/250ml", "0.1mg/1mL") and
+  // sorts by the leading number only. Categorical / weight-band dosings ("STD", "less than 5 kg",
+  // "Wt Based: …") are skipped — their order isn't numeric. Rate Mode drugs are ignored.
+  for (const [ordKey, entries] of dosingGroups) {
+    if (entries.length < 2) continue;
+    const [sheet, care, drug] = ordKey.split('|||');
+    if (String(drug).trim().toLowerCase().startsWith('rate mode')) continue;
+    const leadNum = s => { const m = String(s).trim().match(/^([\d.,]+)/); return m ? parseFloat(m[1].replace(/,/g, '')) : null; };
+    const nums = entries.map(e => leadNum(e.dosing));
+    if (nums.some(n => n === null || !isFinite(n))) continue; // not all numeric-leading → skip
+    const idx = entries.map((_, i) => i).sort((a, b) => (nums[a] - nums[b]) || (a - b)); // stable ascending by number
+    if (idx.every((oi, pos) => oi === pos)) continue; // already smallest → largest
+    allIssues.push({
+      rule: 26,
+      type: 'dosing_number_order',
+      sheet, care, drug, dosing: null, row: entries[0].row,
+      entered: entries,                 // [{dosing, row}] as entered
+      ascending: idx.map(i => entries[i]), // sorted smallest → largest
+    });
+  }
+
   return allIssues;
 }
 
@@ -1407,6 +1429,7 @@ const RULE_INFO = {
   23: { title: 'Rule 23 — Possible Misspelling of "min" in a Dose Unit (cols I / T / AE)', severity: 'err' },
   24: { title: 'Rule 24 — Possible Misspelling of "unit"/"units" (Conc Unit, Dosing Name, or Dose Unit)', severity: 'err' },
   25: { title: 'Rule 25 — Same Drug Name, Different Capitalization (programs as separate pump entries)', severity: 'warn' },
+  26: { title: 'Rule 26 — Dosing Names Not in Number Order (smallest → largest)', severity: 'warn' },
 };
 
 function renderResults(issues) {
@@ -1479,6 +1502,8 @@ function renderResults(issues) {
           ? `${ruleIssues.length} drug group${ruleIssues.length !== 1 ? 's' : ''}`
           : Number(ruleNum) === 13
           ? `${ruleIssues.length} care area${ruleIssues.length !== 1 ? 's' : ''}`
+          : Number(ruleNum) === 26
+          ? `${ruleIssues.length} drug${ruleIssues.length !== 1 ? 's' : ''}`
           : `${ruleIssues.length} issue${ruleIssues.length !== 1 ? 's' : ''}`;
 
     let bodyHtml;
@@ -1694,6 +1719,44 @@ function renderResults(issues) {
           </div>`).join('');
         bodyHtml = `<div class="dup-groups-wrap">${groupsHtml}</div>`;
       }
+    } else if (Number(ruleNum) === 26) {
+      // Special rendering: one box per drug — dosing names as entered vs smallest → largest
+      if (ruleIssues.length === 0) {
+        bodyHtml = '<div class="ok-banner">✅ Every drug\'s numeric dosing names are already in smallest → largest order.</div>';
+      } else {
+        const groupsHtml = ruleIssues.map(issue => {
+          const ascKeys = issue.ascending.map(e => e.dosing);
+          const entKeys = issue.entered.map(e => e.dosing);
+          const enteredRows = issue.entered.map((e, ti) => {
+            const ai = ascKeys.indexOf(e.dosing);
+            const moved = ai !== ti;
+            return `<div class="ord-entry ${moved ? 'moved' : 'same'}">${escHtml(e.dosing)}<span class="row-chip">Row ${e.row}</span></div>`;
+          }).join('');
+          const ascRows = issue.ascending.map((e, ai) => {
+            const ti = entKeys.indexOf(e.dosing);
+            const moved = ai !== ti;
+            return `<div class="ord-entry ${moved ? 'correct' : 'same'}">${escHtml(e.dosing)}<span class="row-chip">Row ${e.row}</span></div>`;
+          }).join('');
+          return `
+            <div class="ord-group">
+              <div class="ord-group-header">
+                🔢 <strong>${escHtml(issue.drug)}</strong> — care area: <strong>${escHtml(issue.care || '—')}</strong>
+                &nbsp;<span class="sheet-tag">${escHtml(issue.sheet)}</span>
+              </div>
+              <div class="ord-comparison">
+                <div class="ord-col">
+                  <div class="ord-col-title pump">📋 As entered</div>
+                  ${enteredRows}
+                </div>
+                <div class="ord-col">
+                  <div class="ord-col-title natural">✅ Smallest → largest (recommended)</div>
+                  ${ascRows}
+                </div>
+              </div>
+            </div>`;
+        }).join('');
+        bodyHtml = `<div class="ord-groups-wrap">${groupsHtml}</div>`;
+      }
     } else {
       // Standard rendering for all other rules
       const stdBadge = ruleIssues.length === 0 ? '✓ Clear' : `${ruleIssues.length} issue${ruleIssues.length !== 1 ? 's' : ''}`;
@@ -1900,6 +1963,7 @@ const RULE_DESC = {
   23:'A dose unit’s time part looks like a typo of <code>min</code> — e.g. <code>mcg/kg/kin</code>.',
   24:'A unit looks like a typo of <code>unit</code>/<code>units</code> — e.g. <code>uniit</code>. Valid units like <code>milliunits</code>/<code>mUnits</code> are recognized.',
   25:'Two drug entries in one care area match except for capital letters or spacing (e.g. <code>Shock</code> vs <code>SHOCK</code>). The pump lists them as separate drugs — pick one spelling.',
+  26:'Within a drug, the dosing names should list smallest → largest by number (e.g. <code>8mg/250ml</code> before <code>16mg/250ml</code>). Flags a drug whose numeric dosing names are out of ascending order, showing the entered order vs the recommended order. Only checks drugs whose dosing names are all number-leading — categorical or weight-band dosings (<code>STD</code>, <code>less than 5 kg</code>, <code>Wt Based:</code> …) are skipped, and Rate Mode is ignored.',
 };
 (function buildRulesPanel(){
   const body = document.getElementById('rules-body');

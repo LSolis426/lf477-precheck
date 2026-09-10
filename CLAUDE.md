@@ -210,6 +210,22 @@ Within each care area (sheet + col B), the pump displays drug names in alphabeti
 
 Display: side-by-side "Template entry order" vs "Pump will show (alphabetical)", with drugs that changed position highlighted. Also flags drug names starting with a non-alphanumeric character (those float before A–Z on the pump screen). Severity: warn.
 
+### Rule 26 — Dosing Names Not in Number Order (smallest → largest)
+A template-organization QA check (distinct from Rules 10/13, which are about what the *pump* displays):
+within each drug (Care Area + Drug Name, **Rate Mode ignored**), the Dosing Names (col D) should be
+entered **smallest number → largest** (e.g. `8mg/250ml` before `16mg/250ml`). Reuses the per-drug
+`dosingGroups` collection. **Only checks drugs whose dosing names are ALL number-leading** — it extracts
+each dosing's leading number (`/^\s*([\d.,]+)/`) and, if any dosing has no leading number, the drug is
+skipped. This deliberately skips categorical / weight-band dosings (`STD`, `HIGH`, `less than 5 kg`,
+`weight based`, `Wt Based: …`, `Non-Wt: …`) whose order isn't numeric. Sorts by the **leading number
+only** with a stable tiebreak, so same-first-number doses (e.g. `500mg/250mL` vs `500mg/110mL`) keep
+their entered order and aren't falsely flagged. Only column D is checked — column-C (drug) alphabetical
+order is Rule 13's job. Display: side-by-side "As entered" vs "Smallest → largest (recommended)" per
+flagged drug, moved rows highlighted. Severity: warn. **Calibration:** across ~40 real templates this
+flags ~9% of all-numeric-leading drugs, and spot-checks were all genuine (e.g. `16mg` before `8mg`,
+`32,16,8` → `8,16,32`, `0.5` before `0.1`) — the naive full-sort version was ~57% (mostly false
+positives on weight-band/categorical dosings), which is why the number-leading gate exists.
+
 ### Rule 25 — Same Drug Name, Different Capitalization
 Within a care area, flags Drug Names (col C) that are the same to a clinician but were entered with
 different **capitalization or spacing**, e.g. `vasopressin -   Shock` vs `vasopressin -   SHOCK`. The
