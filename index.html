@@ -632,9 +632,9 @@ function validate(workbook) {
         const care = caFill;
         const loc = { sheet: sheetName, row: ri + 1, care, drug: row[C.DRUG_NAME], dosing: row[C.DOSING_NAME] };
         // Rule 5 — required fields still apply to Rate Mode entries
-        if (isEmpty(row[C.KVO_MODE])) allIssues.push({ rule: 5, ...loc, msg: 'KVO Mode (col AT) is empty' });
+        if (isEmpty(row[C.KVO_MODE])) allIssues.push({ rule: 8, ...loc, msg: 'KVO Mode (col AT) is empty' });
         if (hasQuickRecall && isEmpty(row[C.QUICK_RCL])) {
-          allIssues.push({ rule: 5, ...loc, msg: 'Quick Recall (col AV) is empty — required when this column is present' });
+          allIssues.push({ rule: 8, ...loc, msg: 'Quick Recall (col AV) is empty — required when this column is present' });
         }
         // Rules 10 & 13 — feed the pump display-order checks (drug list gets alphabetized).
         const ordKey = `${sheetName}|||${String(care||'').trim()}|||${String(row[C.DRUG_NAME]||'').trim()}`;
@@ -707,13 +707,13 @@ function validate(workbook) {
       // Only check rows that are actually a drug entry (a Drug Name and/or Dosing Name present).
       // Rows with both blank are empty template rows — nothing is "missing" on an unused row.
       if (!isEmpty(drugName) || !isEmpty(dosingName)) {
-        if (isEmpty(careArea))   allIssues.push({ rule: 5, ...loc, msg: 'Care Area Name (col B) is empty' });
-        if (isEmpty(drugName))   allIssues.push({ rule: 5, ...loc, msg: 'Drug Name (col C) is empty' });
-        if (isEmpty(dosingName)) allIssues.push({ rule: 5, ...loc, msg: 'Dosing Name (col D) is empty' });
-        if (isEmpty(row[C.PRI_UNIT]))  allIssues.push({ rule: 5, ...loc, msg: 'Primary Dose Unit (col I) is empty' });
-        if (isEmpty(row[C.KVO_MODE])) allIssues.push({ rule: 5, ...loc, msg: 'KVO Mode (col AT) is empty' });
+        if (isEmpty(careArea))   allIssues.push({ rule: 8, ...loc, msg: 'Care Area Name (col B) is empty' });
+        if (isEmpty(drugName))   allIssues.push({ rule: 8, ...loc, msg: 'Drug Name (col C) is empty' });
+        if (isEmpty(dosingName)) allIssues.push({ rule: 8, ...loc, msg: 'Dosing Name (col D) is empty' });
+        if (isEmpty(row[C.PRI_UNIT]))  allIssues.push({ rule: 8, ...loc, msg: 'Primary Dose Unit (col I) is empty' });
+        if (isEmpty(row[C.KVO_MODE])) allIssues.push({ rule: 8, ...loc, msg: 'KVO Mode (col AT) is empty' });
         if (hasQuickRecall && isEmpty(row[C.QUICK_RCL])) {
-          allIssues.push({ rule: 5, ...loc, msg: 'Quick Recall (col AV) is empty — required when this column is present' });
+          allIssues.push({ rule: 8, ...loc, msg: 'Quick Recall (col AV) is empty — required when this column is present' });
         }
       }
 
@@ -727,7 +727,7 @@ function validate(workbook) {
         ];
         for (const [idx, label] of mCheck) {
           if (!isEmpty(row[idx])) {
-            allIssues.push({ rule: 2, ...loc, msg: `Primary Dose Unit is mL-based ("${row[C.PRI_UNIT]}") — col ${label} must be blank but has value "${row[idx]}"` });
+            allIssues.push({ rule: 11, ...loc, msg: `Primary Dose Unit is mL-based ("${row[C.PRI_UNIT]}") — col ${label} must be blank but has value "${row[idx]}"` });
           }
         }
       }
@@ -743,7 +743,7 @@ function validate(workbook) {
         if (isEmpty(secUnit)) continue;
         const secIsMl = isMLUnit(secUnit);
         if ((priIsMl && !secIsMl) || (!priIsMl && secIsMl && !isEmpty(row[C.PRI_UNIT]))) {
-          allIssues.push({ rule: 15, ...loc,
+          allIssues.push({ rule: 18, ...loc,
             r15pri: { label: 'Primary (col I)',          value: String(row[C.PRI_UNIT]), isMl: priIsMl },
             r15sec: { label: `${section} (col ${label.split(' ')[0]})`, value: String(secUnit),         isMl: secIsMl },
             msg: `Primary Dose Unit "${row[C.PRI_UNIT]}" vs ${section} Dose Unit "${secUnit}" — mL dose units are only compatible with other mL dose units`,
@@ -763,7 +763,7 @@ function validate(workbook) {
             const r16sections = [];
             if (bolFilled) r16sections.push({ label: 'Bolus (col T)', value: !isEmpty(row[C.BOL_UNIT]) ? String(row[C.BOL_UNIT]) : '(no unit)' });
             if (lodFilled) r16sections.push({ label: 'Loading (col AE)', value: !isEmpty(row[C.LOD_UNIT]) ? String(row[C.LOD_UNIT]) : '(no unit)' });
-            allIssues.push({ rule: 16, ...loc,
+            allIssues.push({ rule: 19, ...loc,
               r16priUnit: String(row[C.PRI_UNIT]),
               r16sections,
               msg: `Primary Dose Unit "${row[C.PRI_UNIT]}" is not rate-based (/min or /hr) — bolus and loading fields must be blank`,
@@ -807,7 +807,7 @@ function validate(workbook) {
         const filled = vals.filter(x => typeof x.v === 'number');
         for (let i = 0; i < filled.length - 1; i++) {
           if (filled[i].v < filled[i + 1].v) {
-            allIssues.push({ rule: 3, ...loc, msg: `${section} limits out of order: ${filled[i].lbl} (${filled[i].v}) < ${filled[i+1].lbl} (${filled[i+1].v})` });
+            allIssues.push({ rule: 22, ...loc, msg: `${section} limits out of order: ${filled[i].lbl} (${filled[i].v}) < ${filled[i+1].lbl} (${filled[i+1].v})` });
           }
         }
       }
@@ -848,7 +848,7 @@ function validate(workbook) {
         const filled = vals.filter(x => typeof x.v === 'number' && x.v > 0 && x.v <= 1);
         for (let i = 0; i < filled.length - 1; i++) {
           if (filled[i].v < filled[i + 1].v) {
-            allIssues.push({ rule: 3, ...loc,
+            allIssues.push({ rule: 22, ...loc,
               msg: `${section} limits out of order: ${filled[i].lbl} (${fmtTime(filled[i].v)}) < ${filled[i+1].lbl} (${fmtTime(filled[i+1].v)})`
             });
           }
@@ -870,7 +870,7 @@ function validate(workbook) {
       ];
       for (const [idx, label] of numericFields) {
         if (hasExcessDecimals(row[idx])) {
-          allIssues.push({ rule: 4, ...loc, msg: `Col ${label} = ${row[idx]} — more than 3 decimal places (minimum precision is 0.001)` });
+          allIssues.push({ rule: 9, ...loc, msg: `Col ${label} = ${row[idx]} — more than 3 decimal places (minimum precision is 0.001)` });
         }
       }
 
@@ -882,14 +882,14 @@ function validate(workbook) {
         const km = String(kvoMode).trim().toLowerCase();
         if (km === 'rate') {
           if (isEmpty(kvoRate)) {
-            allIssues.push({ rule: 6, ...loc, msg: 'KVO Mode is "Rate" but KVO Rate (col AU) is blank — must enter a value between 0.4 and 20 mL/hr' });
+            allIssues.push({ rule: 24, ...loc, msg: 'KVO Mode is "Rate" but KVO Rate (col AU) is blank — must enter a value between 0.4 and 20 mL/hr' });
           } else if (typeof kvoRate === 'number' && (kvoRate < 0.4 || kvoRate > 20)) {
-            allIssues.push({ rule: 6, ...loc, msg: `KVO Mode is "Rate" but KVO Rate ${kvoRate} mL/hr is outside the allowed range of 0.4–20 mL/hr` });
+            allIssues.push({ rule: 24, ...loc, msg: `KVO Mode is "Rate" but KVO Rate ${kvoRate} mL/hr is outside the allowed range of 0.4–20 mL/hr` });
             kvoRateAlreadyFlagged = true;
           }
         } else if (km === 'off' || km === 'continue primary rate') {
           if (!isEmpty(kvoRate)) {
-            allIssues.push({ rule: 7, ...loc, msg: `KVO Mode is "${kvoMode}" — KVO Rate (col AU) must be blank, but has value ${kvoRate}` });
+            allIssues.push({ rule: 25, ...loc, msg: `KVO Mode is "${kvoMode}" — KVO Rate (col AU) must be blank, but has value ${kvoRate}` });
             kvoRateAlreadyFlagged = true;
           }
         }
@@ -900,9 +900,9 @@ function validate(workbook) {
       // flagged this same cell, so a single problem isn't reported twice.
       if (!isEmpty(kvoRate) && !kvoRateAlreadyFlagged) {
         if (typeof kvoRate !== 'number') {
-          allIssues.push({ rule: 17, ...loc, msg: `KVO Rate (col AU) = "${kvoRate}" is not a number — it must be blank or a number between 0.4 and 20 mL/hr` });
+          allIssues.push({ rule: 26, ...loc, msg: `KVO Rate (col AU) = "${kvoRate}" is not a number — it must be blank or a number between 0.4 and 20 mL/hr` });
         } else if (kvoRate < 0.4 || kvoRate > 20) {
-          allIssues.push({ rule: 17, ...loc, msg: `KVO Rate (col AU) = ${kvoRate} is outside the allowed range — it must be blank or a number between 0.4 and 20 mL/hr` });
+          allIssues.push({ rule: 26, ...loc, msg: `KVO Rate (col AU) = ${kvoRate} is outside the allowed range — it must be blank or a number between 0.4 and 20 mL/hr` });
         }
       }
 
@@ -914,7 +914,7 @@ function validate(workbook) {
       for (const [idx, label] of weightFields) {
         const v = row[idx];
         if (typeof v === 'number' && (v < 0.1 || v > 350)) {
-          allIssues.push({ rule: 8, ...loc, msg: `Col ${label} weight ${v} kg is outside the allowed range of 0.1–350 kg` });
+          allIssues.push({ rule: 23, ...loc, msg: `Col ${label} weight ${v} kg is outside the allowed range of 0.1–350 kg` });
         }
       }
 
@@ -931,7 +931,7 @@ function validate(workbook) {
           if (ratio > NAME_FIT_THRESHOLD) {
             const pct = Math.round(ratio * 100);
             allIssues.push({
-              rule: 9, ...loc,
+              rule: 4, ...loc,
               msg: `${label} "${s}" exceeds display width (${pct}% of capacity)`,
               r9label: label,
               r9val: s,
@@ -958,7 +958,7 @@ function validate(workbook) {
         // (the column is simply unused), so it's left un-flagged.
         if (sectionUnitIdx != null && isRateBasedUnit(row[sectionUnitIdx])) {
           if (typeof v === 'string' || (typeof v === 'number' && v > 0)) {
-            allIssues.push({ rule: 11, ...loc,
+            allIssues.push({ rule: 10, ...loc,
               msg: `Col ${label} has a value, but ${sectionName} Dose Unit (col ${sectionUnitIdx === C.PRI_UNIT ? 'I' : sectionUnitIdx === C.BOL_UNIT ? 'T' : 'AE'}) = "${row[sectionUnitIdx]}" is rate-based (/min or /hr). ${sectionName} time limits cannot be programmed on the pump when the dose unit is per-minute or per-hour — this column must be left blank.`
             });
           }
@@ -966,11 +966,11 @@ function validate(workbook) {
         }
 
         if (typeof v === 'string') {
-          allIssues.push({ rule: 11, ...loc,
+          allIssues.push({ rule: 10, ...loc,
             msg: `Col ${label} contains "${v}" — this looks like a rate from another pump system. Must be hh:mm:ss time duration (how long the bolus/infusion should run), not a rate or text.`
           });
         } else if (typeof v === 'number' && v > 1) {
-          allIssues.push({ rule: 11, ...loc,
+          allIssues.push({ rule: 10, ...loc,
             msg: `Col ${label} contains the value ${v} which exceeds 24 hours — likely entered as a rate (e.g. mL/hr or mcg/hr) from another pump system. Must be converted to hh:mm:ss duration.`
           });
         } else if (typeof v === 'number' && v <= 0 && idx === C.BOL_T_INIT) {
@@ -980,7 +980,7 @@ function validate(workbook) {
         } else if (typeof v === 'number' && v <= 0 && idx === C.LOD_T_INIT && !isRateBasedUnit(row[C.LOD_UNIT])) {
           // Loading Initial Time of 0 is acceptable when Loading Dose Unit is not rate-based (/min or /hr)
         } else if (typeof v === 'number' && v <= 0) {
-          allIssues.push({ rule: 11, ...loc,
+          allIssues.push({ rule: 10, ...loc,
             msg: `Col ${label} contains ${v} — must be a positive hh:mm:ss time duration greater than 00:00:00.`
           });
         }
@@ -1008,7 +1008,7 @@ function validate(workbook) {
           ? isFinite(amt)
           : /^[+-]?(\d+\.?\d*|\.\d+)$/.test(String(amt).trim());
         if (!amtIsNumber) {
-          allIssues.push({ rule: 18, ...loc,
+          allIssues.push({ rule: 13, ...loc,
             msg: `${label} = "${amt}" must be a number or left blank — it cannot contain letters or units (e.g. "mcg", "mL"). The unit belongs in ${unitCol}.`
           });
         }
@@ -1026,7 +1026,7 @@ function validate(workbook) {
         const unit = row[idx];
         if (isEmpty(unit)) continue;
         if (/\d/.test(String(unit))) {
-          allIssues.push({ rule: 19, ...loc,
+          allIssues.push({ rule: 14, ...loc,
             msg: `${label} = "${unit}" must contain only a unit (letters) or be left blank — it cannot contain numbers. The numeric amount belongs in ${amtCol}.`
           });
         }
@@ -1071,13 +1071,13 @@ function validate(workbook) {
         }
 
         if (sameEnd) {
-          allIssues.push({ rule: 20, ...loc, severity: 'warn',
+          allIssues.push({ rule: 15, ...loc, severity: 'warn',
             r20: { kind: 'yellow', name: nameStr, entered: enteredStr,
               note: `Different numbers, but the final concentration is the same (${ratioTxt}). Likely intentional — verify.` },
             msg: `Dosing Name "${nameStr}" vs entered "${enteredStr}" — different numbers, same final concentration.`
           });
         } else {
-          allIssues.push({ rule: 20, ...loc, severity: 'err',
+          allIssues.push({ rule: 15, ...loc, severity: 'err',
             r20: { kind: 'red', name: nameStr, entered: enteredStr,
               note: `The dosing name and the entered concentration (cols E–H) do not match. Correct one so they agree.` },
             msg: `Dosing Name "${nameStr}" does not match entered concentration "${enteredStr}".`
@@ -1098,7 +1098,7 @@ function validate(workbook) {
         const v = row[idx];
         if (isEmpty(v)) continue;
         if (/\d/.test(String(v))) {
-          allIssues.push({ rule: 21, ...loc,
+          allIssues.push({ rule: 16, ...loc,
             msg: `${label} = "${v}" must contain only text (letters) or be left blank — it cannot contain numbers.`
           });
         }
@@ -1126,7 +1126,7 @@ function validate(workbook) {
         if (isEmpty(v)) continue;
         const isNum = typeof v === 'number' ? isFinite(v) : /^[+-]?(\d+\.?\d*|\.\d+)$/.test(String(v).trim());
         if (!isNum) {
-          allIssues.push({ rule: 22, ...loc,
+          allIssues.push({ rule: 17, ...loc,
             msg: `${label} = "${v}" must be a number or left blank — it cannot contain letters.`
           });
         }
@@ -1150,7 +1150,7 @@ function validate(workbook) {
         if (!tok || VALID_TIME_TOKENS.has(tok)) continue;
         const isTranspositionOfMin = tok.length === 3 && [...tok].sort().join('') === 'imn'; // anagram of "min"
         if (levenshtein(tok, 'min') === 1 || isTranspositionOfMin) {
-          allIssues.push({ rule: 23, ...loc,
+          allIssues.push({ rule: 20, ...loc,
             msg: `${label} = "${u}" — "${lastRaw}" looks like a misspelling of "min". Did you mean ".../min"?`
           });
         }
@@ -1175,7 +1175,7 @@ function validate(workbook) {
         const target = unitMisspellTarget(tok.toLowerCase());
         if (target) {
           const wrong = wrongPositions(tok.toLowerCase(), target); // which chars in tok are wrong vs the correct word
-          allIssues.push({ rule: 24, ...loc,
+          allIssues.push({ rule: 21, ...loc,
             r24label: label, r24raw: raw, r24token: tok, r24target: target, r24wrong: wrong,
             msg: `${label} = "${raw}" — "${tok}" looks like a misspelling of "${target}".`
           });
@@ -1201,7 +1201,7 @@ function validate(workbook) {
             if (bestMatch && bestDist > 0 && bestDist <= threshold) {
               const wrong = wrongPositions(normalized, bestMatch.toLowerCase());
               const rest = trimmedDrug.trim().slice(firstWord[1].length); // suffix after first word
-              allIssues.push({ rule: 14, ...loc,
+              allIssues.push({ rule: 3, ...loc,
                 r14word: firstWord[1],   // original-case first word
                 r14wrong: wrong,         // boolean[] marking wrong chars
                 r14rest: rest,           // rest of name after first word (suffix)
@@ -1316,7 +1316,7 @@ function validate(workbook) {
     })();
 
     allIssues.push({
-      rule: 10,
+      rule: 6,
       type: 'ordering_group',
       sheet, care, drug,
       row: entries[0].row,
@@ -1342,7 +1342,7 @@ function validate(workbook) {
     const symbolDrugs  = drugs.filter(d => d.name.length > 0 && /^[^a-zA-Z0-9]/.test(d.name));
     if (orderMatches) continue; // only flag when pump order differs from template order
     allIssues.push({
-      rule: 13,
+      rule: 5,
       type: 'drug_order_group',
       sheet, care, drug: null, dosing: null, row: drugs[0].row,
       drugs,        // [{name, row}] in template order
@@ -1366,7 +1366,7 @@ function validate(workbook) {
         .map(v => `"${v.name.trim()}" (row${v.rows.length > 1 ? 's' : ''} ${rowsFmt(v.rows)})`)
         .join(' vs ');
       allIssues.push({
-        rule: 25,
+        rule: 2,
         type: 'case_variant_group',
         sheet, care, drug: variants[0].name.trim(), dosing: '—', row: variants[0].rows[0],
         variants,
@@ -1391,7 +1391,7 @@ function validate(workbook) {
     const idx = entries.map((_, i) => i).sort((a, b) => (nums[a] - nums[b]) || (a - b)); // stable ascending by number
     if (idx.every((oi, pos) => oi === pos)) continue; // already smallest → largest
     allIssues.push({
-      rule: 26,
+      rule: 7,
       type: 'dosing_number_order',
       sheet, care, drug, dosing: null, row: entries[0].row,
       entered: entries,                 // [{dosing, row}] as entered
@@ -1404,32 +1404,38 @@ function validate(workbook) {
 
 // ─── Render results ───────────────────────────────────────────────────────────
 const RULE_INFO = {
+  // — Names & Ordering (1–7) —
   1: { title: 'Rule 1 — Duplicate Drug + Dosing Name', severity: 'err' },
-  2: { title: 'Rule 2 — mL-based Unit with Concentration Data', severity: 'err' },
-  3: { title: 'Rule 3 — Limits Not in Descending Order', severity: 'err' },
-  4: { title: 'Rule 4 — Too Many Decimal Places (max 0.001)', severity: 'err' },
-  5: { title: 'Rule 5 — Required Field Missing', severity: 'err' },
-  6: { title: 'Rule 6 — KVO Rate Missing or Out of Range (Rate mode)', severity: 'err' },
-  7: { title: 'Rule 7 — KVO Rate Should Be Blank (Off / Continue Primary Rate)', severity: 'warn' },
-  8: { title: 'Rule 8 — Weight Outside 0.1–350 kg', severity: 'err' },
-  9: { title: 'Rule 9 — Name Too Long for Display Field', severity: 'warn' },
-  10: { title: 'Rule 10 — Alphabetical Order May Surprise Clinicians', severity: 'warn' },
-  11: { title: 'Rule 11 — Time Limit Column Not in hh:mm:ss Format', severity: 'err' },
+  2: { title: 'Rule 2 — Same Drug Name, Different Capitalization (programs as separate pump entries)', severity: 'warn' },
+  3: { title: 'Rule 3 — Drug Name Spelling Check', severity: 'warn' },
+  4: { title: 'Rule 4 — Name Too Long for Display Field', severity: 'warn' },
+  5: { title: 'Rule 5 — Drug Display Order Within Care Area', severity: 'warn' },
+  6: { title: 'Rule 6 — Alphabetical Order May Surprise Clinicians', severity: 'warn' },
+  7: { title: 'Rule 7 — Dosing Names Not in Number Order (smallest → largest)', severity: 'warn' },
+  // — Required Fields & Formatting (8–10) —
+  8: { title: 'Rule 8 — Required Field Missing', severity: 'err' },
+  9: { title: 'Rule 9 — Too Many Decimal Places (max 0.001)', severity: 'err' },
+  10: { title: 'Rule 10 — Time Limit Column Not in hh:mm:ss Format', severity: 'err' },
+  // — Concentration (11–15) —
+  11: { title: 'Rule 11 — mL-based Unit with Concentration Data', severity: 'err' },
   12: { title: 'Rule 12 — Conc Unit Filled Without Conc Amount or Diluent Amount', severity: 'err' },
-  13: { title: 'Rule 13 — Drug Display Order Within Care Area', severity: 'warn' },
-  14: { title: 'Rule 14 — Drug Name Spelling Check', severity: 'warn' },
-  15: { title: 'Rule 15 — Mismatched Dose Units (mL Primary with non-mL Bolus/Loading)', severity: 'err' },
-  16: { title: 'Rule 16 — Bolus/Loading Fields Filled but Primary Unit is Not Rate-Based (/min or /hr)', severity: 'err' },
-  17: { title: 'Rule 17 — KVO Rate Out of Range (must be blank or a number 0.4–20 mL/hr)', severity: 'err' },
-  18: { title: 'Rule 18 — Conc Amount (col F) & Diluent Amount (col H) Must Be a Number or Blank (no letters/units)', severity: 'err' },
-  19: { title: 'Rule 19 — Conc Unit (col E) & Diluent Unit (col G) Must Be Letters or Blank (no numbers)', severity: 'err' },
-  20: { title: 'Rule 20 — Dosing Name vs Entered Concentration (red = no match, yellow = same final concentration)', severity: 'err' },
-  21: { title: 'Rule 21 — Dose Unit & KVO Mode (cols I, T, AE, AT) Must Be Letters or Blank (no numbers)', severity: 'err' },
-  22: { title: 'Rule 22 — Dose/Limit/Weight Columns (J–N, U–Y, AF–AJ, AP–AS) Must Be Numbers or Blank (no letters)', severity: 'err' },
-  23: { title: 'Rule 23 — Possible Misspelling of "min" in a Dose Unit (cols I / T / AE)', severity: 'err' },
-  24: { title: 'Rule 24 — Possible Misspelling of "unit"/"units" (Conc Unit, Dosing Name, or Dose Unit)', severity: 'err' },
-  25: { title: 'Rule 25 — Same Drug Name, Different Capitalization (programs as separate pump entries)', severity: 'warn' },
-  26: { title: 'Rule 26 — Dosing Names Not in Number Order (smallest → largest)', severity: 'warn' },
+  13: { title: 'Rule 13 — Conc Amount (col F) & Diluent Amount (col H) Must Be a Number or Blank (no letters/units)', severity: 'err' },
+  14: { title: 'Rule 14 — Conc Unit (col E) & Diluent Unit (col G) Must Be Letters or Blank (no numbers)', severity: 'err' },
+  15: { title: 'Rule 15 — Dosing Name vs Entered Concentration (red = no match, yellow = same final concentration)', severity: 'err' },
+  // — Dose Units & Modes (16–21) —
+  16: { title: 'Rule 16 — Dose Unit & KVO Mode (cols I, T, AE, AT) Must Be Letters or Blank (no numbers)', severity: 'err' },
+  17: { title: 'Rule 17 — Dose/Limit/Weight Columns (J–N, U–Y, AF–AJ, AP–AS) Must Be Numbers or Blank (no letters)', severity: 'err' },
+  18: { title: 'Rule 18 — Mismatched Dose Units (mL Primary with non-mL Bolus/Loading)', severity: 'err' },
+  19: { title: 'Rule 19 — Bolus/Loading Fields Filled but Primary Unit is Not Rate-Based (/min or /hr)', severity: 'err' },
+  20: { title: 'Rule 20 — Possible Misspelling of "min" in a Dose Unit (cols I / T / AE)', severity: 'err' },
+  21: { title: 'Rule 21 — Possible Misspelling of "unit"/"units" (Conc Unit, Dosing Name, or Dose Unit)', severity: 'err' },
+  // — Limits & Ranges (22–23) —
+  22: { title: 'Rule 22 — Limits Not in Descending Order', severity: 'err' },
+  23: { title: 'Rule 23 — Weight Outside 0.1–350 kg', severity: 'err' },
+  // — KVO (24–26) —
+  24: { title: 'Rule 24 — KVO Rate Missing or Out of Range (Rate mode)', severity: 'err' },
+  25: { title: 'Rule 25 — KVO Rate Should Be Blank (Off / Continue Primary Rate)', severity: 'warn' },
+  26: { title: 'Rule 26 — KVO Rate Out of Range (must be blank or a number 0.4–20 mL/hr)', severity: 'err' },
 };
 
 function renderResults(issues) {
@@ -1498,11 +1504,11 @@ function renderResults(issues) {
       ? '✓ Clear'
       : Number(ruleNum) === 1
         ? `${ruleIssues.length} duplicate set${ruleIssues.length !== 1 ? 's' : ''}`
-        : Number(ruleNum) === 10
+        : Number(ruleNum) === 6
           ? `${ruleIssues.length} drug group${ruleIssues.length !== 1 ? 's' : ''}`
-          : Number(ruleNum) === 13
+          : Number(ruleNum) === 5
           ? `${ruleIssues.length} care area${ruleIssues.length !== 1 ? 's' : ''}`
-          : Number(ruleNum) === 26
+          : Number(ruleNum) === 7
           ? `${ruleIssues.length} drug${ruleIssues.length !== 1 ? 's' : ''}`
           : `${ruleIssues.length} issue${ruleIssues.length !== 1 ? 's' : ''}`;
 
@@ -1543,7 +1549,7 @@ function renderResults(issues) {
           </div>`).join('');
         bodyHtml = `<div class="dup-groups-wrap">${groupsHtml}</div>`;
       }
-    } else if (Number(ruleNum) === 10) {
+    } else if (Number(ruleNum) === 6) {
       // Special rendering: show pump order vs natural order side by side
       if (ruleIssues.length === 0) {
         bodyHtml = '<div class="ok-banner">✅ Pump display order matches template entry order for all dosing name groups.</div>';
@@ -1637,7 +1643,7 @@ function renderResults(issues) {
         }).join('');
         bodyHtml = `<div class="ord-groups-wrap">${groupsHtml}</div>`;
       }
-    } else if (Number(ruleNum) === 13) {
+    } else if (Number(ruleNum) === 5) {
       // Special rendering: show template entry order vs pump (alphabetical) order for drug names
       if (ruleIssues.length === 0) {
         bodyHtml = '<div class="ok-banner">✅ Drug names in every care area already match alphabetical order.</div>';
@@ -1693,7 +1699,7 @@ function renderResults(issues) {
         }).join('');
         bodyHtml = `<div class="ord-groups-wrap">${groupsHtml}</div>`;
       }
-    } else if (Number(ruleNum) === 25) {
+    } else if (Number(ruleNum) === 2) {
       // Special rendering: one box per group, listing every spelling and its Excel rows
       if (ruleIssues.length === 0) {
         bodyHtml = '<div class="ok-banner">✅ No drug names differ only by capitalization or spacing.</div>';
@@ -1719,7 +1725,7 @@ function renderResults(issues) {
           </div>`).join('');
         bodyHtml = `<div class="dup-groups-wrap">${groupsHtml}</div>`;
       }
-    } else if (Number(ruleNum) === 26) {
+    } else if (Number(ruleNum) === 7) {
       // Special rendering: one box per drug — dosing names as entered vs smallest → largest
       if (ruleIssues.length === 0) {
         bodyHtml = '<div class="ok-banner">✅ Every drug\'s numeric dosing names are already in smallest → largest order.</div>';
@@ -1829,7 +1835,7 @@ function renderResults(issues) {
             </tbody>
           </table>`;
       // Override badge for non-rule-1
-      const ruleNote = Number(ruleNum) === 9
+      const ruleNote = Number(ruleNum) === 4
         ? `<div class="rule-note">⚠ Please double-check flagged names in the emulator before discussing with the Pharmacist — this length check is an estimate.</div>`
         : '';
       section.innerHTML = `
@@ -1956,32 +1962,38 @@ document.getElementById('file-input').addEventListener('change', e => processFil
 // Plain-language description per rule. The panel itself is built from RULE_INFO (titles +
 // severity) so it always matches the rules that actually run.
 const RULE_DESC = {
+  // — Names & Ordering (1–7) —
   1:'The same Drug Name + Dosing Name appears more than once in one care area. Every combination must be unique.',
-  2:'When the Primary Dose Unit is mL-based (<code>mL</code>, <code>mL/hr</code>…), the concentration fields <code>E–H</code> must be blank.',
-  3:'Within Primary, Bolus, Loading, or Weight, limits must step down: Upper Hard ≥ Upper Soft ≥ Initial ≥ Lower Soft ≥ Lower Hard.',
-  4:'A dose or limit value is finer than <code>0.001</code> (more than three decimal places).',
-  5:'A required cell is blank — Care Area, Drug Name, Dosing Name, Primary Dose Unit, or KVO Mode (plus Quick Recall when that column is present).',
-  6:'When KVO Mode is <code>Rate</code>, the KVO Rate must be filled and between <code>0.4–20 mL/hr</code>.',
-  7:'When KVO Mode is <code>Off</code> or <code>Continue Primary Rate</code>, the KVO Rate must be empty.',
-  8:'A weight limit falls outside <code>0.1–350 kg</code>.',
-  9:'A Care Area, Drug, or Dosing name is too long to fully fit the pump screen; the characters that would be cut off are shown in red.',
-  10:'The pump lists dosing names alphabetically, which can differ from the order you entered (e.g. <code>10</code> before <code>2</code>). Suggests leading spaces to line them up.',
-  11:'A time-limit column holds something that isn’t a valid duration — text, or a number that’s really a rate. Use an <code>hh:mm:ss</code> duration. Also flags any time limit entered when that section’s Dose Unit (<code>I</code>/<code>T</code>/<code>AE</code>) is rate-based (<code>/min</code> or <code>/hr</code>) — time limits can’t be programmed then, so the column must be blank.',
+  2:'Two drug entries in one care area match except for capital letters or spacing (e.g. <code>Shock</code> vs <code>SHOCK</code>). The pump lists them as separate drugs — pick one spelling.',
+  3:'A drug name looks like a misspelling of a known drug; suggests the correct spelling and highlights the wrong letters.',
+  4:'A Care Area, Drug, or Dosing name is too long to fully fit the pump screen; the characters that would be cut off are shown in red.',
+  5:'The pump also lists drug names alphabetically, which can differ from entry order. Shows entered vs pump order so there are no surprises on screen.',
+  6:'The pump lists dosing names alphabetically, which can differ from the order you entered (e.g. <code>10</code> before <code>2</code>). Suggests leading spaces to line them up.',
+  7:'Within a drug, the dosing names should list smallest → largest by number (e.g. <code>8mg/250ml</code> before <code>16mg/250ml</code>). Flags a drug whose numeric dosing names are out of ascending order, showing the entered order vs the recommended order. Only checks drugs whose dosing names are all number-leading — categorical or weight-band dosings (<code>STD</code>, <code>less than 5 kg</code>, <code>Wt Based:</code> …) are skipped, and Rate Mode is ignored.',
+  // — Required Fields & Formatting (8–10) —
+  8:'A required cell is blank — Care Area, Drug Name, Dosing Name, Primary Dose Unit, or KVO Mode (plus Quick Recall when that column is present).',
+  9:'A dose or limit value is finer than <code>0.001</code> (more than three decimal places).',
+  10:'A time-limit column holds something that isn’t a valid duration — text, or a number that’s really a rate. Use an <code>hh:mm:ss</code> duration. Also flags any time limit entered when that section’s Dose Unit (<code>I</code>/<code>T</code>/<code>AE</code>) is rate-based (<code>/min</code> or <code>/hr</code>) — time limits can’t be programmed then, so the column must be blank.',
+  // — Concentration (11–15) —
+  11:'When the Primary Dose Unit is mL-based (<code>mL</code>, <code>mL/hr</code>…), the concentration fields <code>E–H</code> must be blank.',
   12:'Conc Unit <code>E</code> is filled but both Conc Amount <code>F</code> and Diluent Amount <code>H</code> are blank. Add the numbers, or clear <code>E</code> for a wildcard concentration.',
-  13:'The pump also lists drug names alphabetically, which can differ from entry order. Shows entered vs pump order so there are no surprises on screen.',
-  14:'A drug name looks like a misspelling of a known drug; suggests the correct spelling and highlights the wrong letters.',
-  15:'The Primary unit is mL-based but a Bolus/Loading unit isn’t (or the reverse). mL dose units are only compatible with other mL units.',
-  16:'Bolus or Loading fields are filled in, but the Primary Dose Unit isn’t a rate (<code>/min</code> or <code>/hr</code>). Those fields should be blank unless the primary is rate-based.',
-  17:'KVO Rate <code>AU</code> must be blank or a number between <code>0.4–20 mL/hr</code>, whatever the KVO Mode. Also catches text entered here.',
-  18:'Conc Amount <code>F</code> and Diluent Amount <code>H</code> must be a number or blank — no letters or units. The unit belongs in <code>E</code>/<code>G</code>.',
-  19:'Conc Unit <code>E</code> and Diluent Unit <code>G</code> must be unit text or blank — no numbers. The number belongs in <code>F</code>/<code>H</code>.',
-  20:'Compares the concentration written in the Dosing Name to what’s entered in <code>E–H</code>. <b style="color:#b91c1c">Red</b> = they don’t match; <b style="color:#92400e">Yellow</b> = different numbers but the same final concentration.',
-  21:'Dose Unit columns <code>I</code> <code>T</code> <code>AE</code> and KVO Mode <code>AT</code> must be text or blank — no numbers.',
-  22:'The dose, limit, and weight columns (<code>J–N</code> <code>U–Y</code> <code>AF–AJ</code> <code>AP–AS</code>) must be a number or blank — no letters.',
-  23:'A dose unit’s time part looks like a typo of <code>min</code> — e.g. <code>mcg/kg/kin</code>.',
-  24:'A unit looks like a typo of <code>unit</code>/<code>units</code> — e.g. <code>uniit</code>. Valid units like <code>milliunits</code>/<code>mUnits</code> are recognized.',
-  25:'Two drug entries in one care area match except for capital letters or spacing (e.g. <code>Shock</code> vs <code>SHOCK</code>). The pump lists them as separate drugs — pick one spelling.',
-  26:'Within a drug, the dosing names should list smallest → largest by number (e.g. <code>8mg/250ml</code> before <code>16mg/250ml</code>). Flags a drug whose numeric dosing names are out of ascending order, showing the entered order vs the recommended order. Only checks drugs whose dosing names are all number-leading — categorical or weight-band dosings (<code>STD</code>, <code>less than 5 kg</code>, <code>Wt Based:</code> …) are skipped, and Rate Mode is ignored.',
+  13:'Conc Amount <code>F</code> and Diluent Amount <code>H</code> must be a number or blank — no letters or units. The unit belongs in <code>E</code>/<code>G</code>.',
+  14:'Conc Unit <code>E</code> and Diluent Unit <code>G</code> must be unit text or blank — no numbers. The number belongs in <code>F</code>/<code>H</code>.',
+  15:'Compares the concentration written in the Dosing Name to what’s entered in <code>E–H</code>. <b style="color:#b91c1c">Red</b> = they don’t match; <b style="color:#92400e">Yellow</b> = different numbers but the same final concentration.',
+  // — Dose Units & Modes (16–21) —
+  16:'Dose Unit columns <code>I</code> <code>T</code> <code>AE</code> and KVO Mode <code>AT</code> must be text or blank — no numbers.',
+  17:'The dose, limit, and weight columns (<code>J–N</code> <code>U–Y</code> <code>AF–AJ</code> <code>AP–AS</code>) must be a number or blank — no letters.',
+  18:'The Primary unit is mL-based but a Bolus/Loading unit isn’t (or the reverse). mL dose units are only compatible with other mL units.',
+  19:'Bolus or Loading fields are filled in, but the Primary Dose Unit isn’t a rate (<code>/min</code> or <code>/hr</code>). Those fields should be blank unless the primary is rate-based.',
+  20:'A dose unit’s time part looks like a typo of <code>min</code> — e.g. <code>mcg/kg/kin</code>.',
+  21:'A unit looks like a typo of <code>unit</code>/<code>units</code> — e.g. <code>uniit</code>. Valid units like <code>milliunits</code>/<code>mUnits</code> are recognized.',
+  // — Limits & Ranges (22–23) —
+  22:'Within Primary, Bolus, Loading, or Weight, limits must step down: Upper Hard ≥ Upper Soft ≥ Initial ≥ Lower Soft ≥ Lower Hard.',
+  23:'A weight limit falls outside <code>0.1–350 kg</code>.',
+  // — KVO (24–26) —
+  24:'When KVO Mode is <code>Rate</code>, the KVO Rate must be filled and between <code>0.4–20 mL/hr</code>.',
+  25:'When KVO Mode is <code>Off</code> or <code>Continue Primary Rate</code>, the KVO Rate must be empty.',
+  26:'KVO Rate <code>AU</code> must be blank or a number between <code>0.4–20 mL/hr</code>, whatever the KVO Mode. Also catches text entered here.',
 };
 (function buildRulesPanel(){
   const body = document.getElementById('rules-body');
@@ -1991,7 +2003,7 @@ const RULE_DESC = {
     const info = RULE_INFO[n];
     const title = info.title.replace(/^Rule \d+ — /, '');
     let chip;
-    if (n === 20) { chip = '<span class="rchip rchip-dual">Error / Warning</span>'; errN++; }
+    if (n === 15) { chip = '<span class="rchip rchip-dual">Error / Warning</span>'; errN++; }
     else if (info.severity === 'warn') { warnN++; chip = '<span class="rchip rchip-warn"><span class="rdot"></span>Warning</span>'; }
     else { errN++; chip = '<span class="rchip rchip-err"><span class="rdot"></span>Error</span>'; }
     return `<div class="rule-row"><div class="rno">${n}</div><div>

@@ -98,6 +98,13 @@ The tool expects the standard iRadimed LF477 Excel layout:
 > column key and an Error/Warning legend. (A standalone shareable version of this reference also exists
 > as a Claude artifact.)
 
+> **Grouping.** Rules are numbered in thematic groups so related checks sit next to each other:
+> **Names & Ordering (1–7)**, **Required Fields & Formatting (8–10)**, **Concentration (11–15)**,
+> **Dose Units & Modes (16–21)**, **Limits & Ranges (22–23)**, **KVO (24–26)**. The number is just an
+> identifier — display order in the app and this list both follow it.
+
+## Names & Ordering (1–7)
+
 ### Rule 1 — Duplicate Drug + Dosing Name
 Within the same care area (same sheet + same col B value), every Drug Name + Dosing Name pair must be unique. Duplicates are shown as bordered amber groups listing all matching rows.
 
@@ -105,46 +112,35 @@ Within the same care area (same sheet + same col B value), every Drug Name + Dos
 
 **Key detail:** rows where **both** Drug Name and Dosing Name are blank are skipped entirely (not collected into `dupGroups`). Templates often have many empty rows under a filled-down Care Area; those share an empty drug/dosing key and would otherwise be reported as a big bogus "Duplicate: / —" set. A row is only a duplicate candidate if it has a drug name and/or a dosing name.
 
-### Rule 2 — mL-based Unit with Concentration Data
-If Primary Dose Unit (col I) is mL-based (`mL`, `mL/hr`, `mL/min`, etc.), columns E–H must be blank. Flags each non-blank concentration field individually.
+### Rule 2 — Same Drug Name, Different Capitalization
+Within a care area, flags Drug Names (col C) that are the same to a clinician but were entered with
+different **capitalization or spacing**, e.g. `vasopressin -   Shock` vs `vasopressin -   SHOCK`. The
+pump is case/space-sensitive, so it lists these as **two separate drug entries** — the clinician has
+to open one, discover it's the wrong sub-list of dosing names, back out, and open the other. Wasteful
+and confusing. Detection: drug names are grouped per `(sheet, care area)` by a normalized key
+(`trim` + collapse internal whitespace + `toLowerCase`); any key with 2+ distinct raw spellings is
+flagged. It renders as a bordered group (like Rule 1) with a small table listing **every spelling
+as entered and its Excel rows** — so both `vasopressin -   Shock` (its rows) and `vasopressin -   SHOCK`
+(its rows) appear under Drug Name side by side. Each name is passed through `revealWs()`, which renders
+in monospace and shows **every space as a visible amber dot** (`·`) plus a "(leading/trailing space)"
+note — so an otherwise-invisible trailing space (e.g. `NORepinephrine ` vs `NORepinephrine`) is obvious.
+Scoped per care area (same name in different care areas is fine — separate lists). Note Rule 5's own drug list intentionally de-dupes case-insensitively, so
+it would *hide* this collision — Rule 2 is the dedicated check. Severity: warn. Verified against the
+Connecticut Children's 07.24.26 file: flags exactly the vasopressin `Shock`/`SHOCK` group (No-Z,
+rows 34–36 vs 37–38) and nothing else.
 
-### Rule 3 — Limits Not in Descending Order
-For each of Primary, Bolus, Loading, and Weight sections, limits must satisfy:  
-`Upper Hard ≥ Upper Soft ≥ Initial Dose ≥ Lower Soft ≥ Lower Hard`  
-Only compares fields that are actually filled in. Checks adjacent pairs in that positional order.
+### Rule 3 — Drug Name Spelling Check
+Flags a Drug Name (col C) that looks like a misspelling of a known drug. The first word of the name is
+compared against a built-in list of common drug names; when it's one letter off (a single edit away),
+the rule suggests the correct spelling and **highlights the wrong letter(s)** in yellow (via
+`wrongPositions` + `buildSpellingHtml`, shared with Rule 21). Exact matches and names ≥2 edits from any
+known drug are left alone. Severity: warn — it surfaces likely typos for a human to confirm, it doesn't
+block.
 
-### Rule 4 — Too Many Decimal Places
-Any numeric dose/limit value may have at most 3 decimal places (minimum precision 0.001). Uses `toPrecision(15)` to strip floating-point noise before checking.
-
-### Rule 5 — Required Fields Missing
-These must never be blank: Care Area (B), Drug Name (C), Dosing Name (D), Primary Dose Unit (I), KVO Mode (AT). Quick Recall (AV) is also required *if that column exists* in the template.
-
-**Key detail:** the whole check is skipped for rows where **both** Drug Name and Dosing Name are blank — an empty template row isn't a drug entry, so nothing is "missing" (this mirrors Rule 1). A row with a Drug Name *or* a Dosing Name is still a real entry and its other required fields are checked (e.g. a drug with a blank dosing still flags "Dosing Name empty"). Without this, a template's many trailing blank rows produced ~5 bogus "empty" issues each (184 on the Tift Regional file → 0 after the fix).
-
-**Key detail — Rate-Mode-only sheets (e.g. a `BASIC` care area):** a sheet whose every drug entry starts with `"Rate Mode"` is exempt from the drug-library checks (no concentration/limits/spelling/etc.), but a few rules still apply and the sheet-skip branch runs them before `continue`-ing: **Rule 5** (KVO Mode col AT + Quick Recall col AV are still required on each entry) and **Rules 10 & 13** (the Rate Mode entries are the pump's drug list, which it alphabetizes — so the branch feeds `dosingGroups`/`drugOrderMap`, including the `Rate Mode …` names that Rule 13's normal collection otherwise excludes). In practice Rule 10 is moot on these sheets (one dosing per drug) but Rule 13 fires (the entered grouping — /hr then /min — differs from the pump's alphabetical order). Previously the whole sheet was skipped, so missing AT/AV **and** the drug-order surprise both went uncaught — both reported on the Tift Regional file.
-
-### Rule 6 — KVO Rate Missing or Out of Range
-When KVO Mode (AT) = `"Rate"` (case-insensitive), KVO Rate (AU) must be present and between **0.4 and 20 mL/hr**.
-
-### Rule 7 — KVO Rate Should Be Blank
-When KVO Mode = `"Off"` or `"Continue Primary Rate"`, KVO Rate (AU) must be empty.
-
-### Rule 17 — KVO Rate Out of Range (universal AU value check)
-Independent of KVO Mode: KVO Rate (AU), *if not blank*, must be a **number between
-0.4 and 20 mL/hr** (inclusive). Flags non-numeric values (e.g. text like `"5 mL/hr"`)
-and numbers outside the range. Blank is always allowed. This complements Rules 6 & 7
-(which are mode-specific) and fills the gaps they miss — e.g. a non-numeric rate under
-Rate mode, or an out-of-range value when Mode is blank or unrecognized. To avoid
-double-reporting, Rule 17 is suppressed on a cell already flagged by Rule 6 (Rate mode,
-numeric out of range) or Rule 7 (Off/Continue with any value).
-
-### Rule 8 — Weight Outside 0.1–350 kg
-Weight limit columns (AP–AS) must be between 0.1 and 999 kg if filled.
-
-### Rule 9 — Name Too Long for Display Field
+### Rule 4 — Name Too Long for Display Field
 Care Area, Drug Name, and Dosing Name each have a physical pixel-width limit on the pump screen. Each character has a known capacity (how many of that character fit):
 
-- **Flagging threshold:** fill ratio > **1.063** (shared constant `NAME_FIT_THRESHOLD`, used for both the flag and the red-overflow split). Set to the conservative edge — see the calibration note below. The Rule 9 section header carries a reminder to **verify flagged names in the emulator** before acting.
+- **Flagging threshold:** fill ratio > **1.063** (shared constant `NAME_FIT_THRESHOLD`, used for both the flag and the red-overflow split). Set to the conservative edge — see the calibration note below. The Rule 4 section header carries a reminder to **verify flagged names in the emulator** before acting.
 - **Split threshold for highlighting:** same `NAME_FIT_THRESHOLD` (1.063)
 - **Display:** The Issue cell shows the name with a monospace font; characters that fit are normal, characters that overflow are **red with underline**. Hovering shows tooltip.
 
@@ -161,9 +157,16 @@ The fix: the old model treated digits/punctuation/spaces as the same width as a 
 
 (All ratios above are in the **new** `OTHER_CAP`=28 model, so they differ from the pre-2026 figures.) Validated across the Ascension file (315 names, no new false positives) and Bryn Mawr (correctly adds the previously-missed Ketamine). If more real fit/overflow points emerge, prefer adjusting `OTHER_CAP` and/or the specific letter capacities before moving the threshold — a single number can't fix a per-character-width error.
 
-**The model has an accuracy ceiling (2026).** A later template (MLK) added `"…(concentrated)"` names whose confirmed pump truncations proved the heuristic **cannot be made pixel-perfect**: the ground-truth boundaries are mutually inconsistent under this character model (e.g. `"NORepinephrine ICU (conc"` *fits* at model-1.089 while `"LORazepam (concentrated)"` *truncates its ")"* at model-1.066 — the model ranks a fitting string above a truncating one). Adjusting parenthesis width or any single letter can't separate them. So the threshold was lowered to the **conservative** value **1.063** — just below the shortest confirmed truncation (`LORazepam` 1.066) and just above the tallest whole-name fit (`NORepinephri mcg/kg/mn` 1.061). Consequences, all acceptable for a warning-severity check: it catches every confirmed truncation (fixed the previously-missed `LORazepam`), the red region may **over-mark by ~1 char** (safe direction — e.g. `NORepinephrine ICU (con|centrated)` vs the pump's `(conc|entrated)`), and measured flag counts barely change on real files (MLK +1 = the LORazepam catch; HonorHealth/Ascension +0; Bryn Mawr +1 = a genuinely long name). The Rule 9 header now tells users to confirm flagged names in the emulator — the emulator is the source of truth, this check just surfaces candidates.
+**The model has an accuracy ceiling (2026).** A later template (MLK) added `"…(concentrated)"` names whose confirmed pump truncations proved the heuristic **cannot be made pixel-perfect**: the ground-truth boundaries are mutually inconsistent under this character model (e.g. `"NORepinephrine ICU (conc"` *fits* at model-1.089 while `"LORazepam (concentrated)"` *truncates its ")"* at model-1.066 — the model ranks a fitting string above a truncating one). Adjusting parenthesis width or any single letter can't separate them. So the threshold was lowered to the **conservative** value **1.063** — just below the shortest confirmed truncation (`LORazepam` 1.066) and just above the tallest whole-name fit (`NORepinephri mcg/kg/mn` 1.061). Consequences, all acceptable for a warning-severity check: it catches every confirmed truncation (fixed the previously-missed `LORazepam`), the red region may **over-mark by ~1 char** (safe direction — e.g. `NORepinephrine ICU (con|centrated)` vs the pump's `(conc|entrated)`), and measured flag counts barely change on real files (MLK +1 = the LORazepam catch; HonorHealth/Ascension +0; Bryn Mawr +1 = a genuinely long name). The Rule 4 header now tells users to confirm flagged names in the emulator — the emulator is the source of truth, this check just surfaces candidates.
 
-### Rule 10 — Alphabetical Order May Surprise Clinicians
+### Rule 5 — Drug Display Order Within Care Area
+Within each care area (sheet + col B), the pump displays drug names in alphabetical order regardless of template entry order. This rule flags care areas where the pump's alphabetical order would differ from the order drugs were entered, so pharmacists can see what the pump will actually show.
+
+Display: side-by-side "Template entry order" vs "Pump will show (alphabetical)", with drugs that changed position highlighted. Also flags drug names starting with a non-alphanumeric character (those float before A–Z on the pump screen). Severity: warn.
+
+Drug names render through `revealOddWs()`, which marks **odd whitespace** (leading, trailing, or runs of 2+ spaces) as amber `·` dots while leaving ordinary single spaces plain. This exposes the invisible cause of many surprising reorders: a space (code 32) sorts before punctuation/letters, so e.g. `FentaNYL  > 50 kg` (a **double** space) sorts *before* `FentaNYL < 50 kg` — the second space beats the `<` (60) — flipping the two even though `<` normally precedes `>`. Without the dots the names look identical and the flip is baffling. Fix in the template = remove the stray space.
+
+### Rule 6 — Alphabetical Order May Surprise Clinicians
 Within each care area + drug group, dosing names are sorted two ways:
 1. **Alphabetical** (what the pump displays)
 2. **Natural/numeric** (e.g. 5 before 10)
@@ -205,15 +208,8 @@ In the UI the yellow dashed space box(es) render at the insertion point (`at`), 
 each item + its space count (worded "before the number in" vs "at the start of" per `fixKind`); for pure
 number-leading groups it also shows the resulting numeric order.
 
-### Rule 13 — Drug Display Order Within Care Area
-Within each care area (sheet + col B), the pump displays drug names in alphabetical order regardless of template entry order. This rule flags care areas where the pump's alphabetical order would differ from the order drugs were entered, so pharmacists can see what the pump will actually show.
-
-Display: side-by-side "Template entry order" vs "Pump will show (alphabetical)", with drugs that changed position highlighted. Also flags drug names starting with a non-alphanumeric character (those float before A–Z on the pump screen). Severity: warn.
-
-Drug names render through `revealOddWs()`, which marks **odd whitespace** (leading, trailing, or runs of 2+ spaces) as amber `·` dots while leaving ordinary single spaces plain. This exposes the invisible cause of many surprising reorders: a space (code 32) sorts before punctuation/letters, so e.g. `FentaNYL  > 50 kg` (a **double** space) sorts *before* `FentaNYL < 50 kg` — the second space beats the `<` (60) — flipping the two even though `<` normally precedes `>`. Without the dots the names look identical and the flip is baffling. Fix in the template = remove the stray space.
-
-### Rule 26 — Dosing Names Not in Number Order (smallest → largest)
-A template-organization QA check (distinct from Rules 10/13, which are about what the *pump* displays):
+### Rule 7 — Dosing Names Not in Number Order (smallest → largest)
+A template-organization QA check (distinct from Rules 5/6, which are about what the *pump* displays):
 within each drug (Care Area + Drug Name, **Rate Mode ignored**), the Dosing Names (col D) should be
 entered **smallest number → largest** (e.g. `8mg/250ml` before `16mg/250ml`). Reuses the per-drug
 `dosingGroups` collection. **Only checks drugs whose dosing names are ALL number-leading** — it extracts
@@ -222,124 +218,25 @@ skipped. This deliberately skips categorical / weight-band dosings (`STD`, `HIGH
 `weight based`, `Wt Based: …`, `Non-Wt: …`) whose order isn't numeric. Sorts by the **leading number
 only** with a stable tiebreak, so same-first-number doses (e.g. `500mg/250mL` vs `500mg/110mL`) keep
 their entered order and aren't falsely flagged. Only column D is checked — column-C (drug) alphabetical
-order is Rule 13's job. Display: side-by-side "As entered" vs "Smallest → largest (recommended)" per
+order is Rule 5's job. Display: side-by-side "As entered" vs "Smallest → largest (recommended)" per
 flagged drug, moved rows highlighted. Severity: warn. **Calibration:** across ~40 real templates this
 flags ~9% of all-numeric-leading drugs, and spot-checks were all genuine (e.g. `16mg` before `8mg`,
 `32,16,8` → `8,16,32`, `0.5` before `0.1`) — the naive full-sort version was ~57% (mostly false
 positives on weight-band/categorical dosings), which is why the number-leading gate exists.
 
-### Rule 25 — Same Drug Name, Different Capitalization
-Within a care area, flags Drug Names (col C) that are the same to a clinician but were entered with
-different **capitalization or spacing**, e.g. `vasopressin -   Shock` vs `vasopressin -   SHOCK`. The
-pump is case/space-sensitive, so it lists these as **two separate drug entries** — the clinician has
-to open one, discover it's the wrong sub-list of dosing names, back out, and open the other. Wasteful
-and confusing. Detection: drug names are grouped per `(sheet, care area)` by a normalized key
-(`trim` + collapse internal whitespace + `toLowerCase`); any key with 2+ distinct raw spellings is
-flagged. It renders as a bordered group (like Rule 1) with a small table listing **every spelling
-as entered and its Excel rows** — so both `vasopressin -   Shock` (its rows) and `vasopressin -   SHOCK`
-(its rows) appear under Drug Name side by side. Each name is passed through `revealWs()`, which renders
-in monospace and shows **every space as a visible amber dot** (`·`) plus a "(leading/trailing space)"
-note — so an otherwise-invisible trailing space (e.g. `NORepinephrine ` vs `NORepinephrine`) is obvious.
-Scoped per care area (same name in different care areas is fine — separate lists). Note Rule 13's own drug list intentionally de-dupes case-insensitively, so
-it would *hide* this collision — Rule 25 is the dedicated check. Severity: warn. Verified against the
-Connecticut Children's 07.24.26 file: flags exactly the vasopressin `Shock`/`SHOCK` group (No-Z,
-rows 34–36 vs 37–38) and nothing else.
+## Required Fields & Formatting (8–10)
 
-### Rule 12 — Conc Unit Filled Without Numeric Concentration Values
-If Conc Amount (F) and Diluent Amount (H) are both blank, Conc Unit (E) must also be blank. When a pharmacist intends a wildcard concentration (any concentration allowed), all three fields should be empty. A unit in E with no numbers in F/H is an incomplete entry.
+### Rule 8 — Required Fields Missing
+These must never be blank: Care Area (B), Drug Name (C), Dosing Name (D), Primary Dose Unit (I), KVO Mode (AT). Quick Recall (AV) is also required *if that column exists* in the template.
 
-### Rule 18 — Conc Amount (col F) & Diluent Amount (col H) Must Be a Number or Blank
-Columns F (Conc Amount) and H (Diluent Amount) hold only numeric amounts — each must be
-a number, or left blank. Any letters/units in them (e.g. `"mcg"` in F, `"mL"` in H) are a
-data-entry error: the unit belongs in the matching unit column (Conc Unit col E for F,
-Diluent Unit col G for H), not the amount column. A value is accepted if it is a numeric
-cell or a plain numeric string (`450`, `0.5`); it is flagged if it contains letters or
-other non-numeric text (`"mcg"`, `"5 mcg"`). Blank is always allowed; F and H are checked
-independently (a bad F and a bad H on the same row produce two separate flags). Verified
-against `MultiCare Corporate 3870 DERS 06.30.26.xlsx`, where PEDIATRIC F5–F8 (PEDS
-dexmedeTOMidine) contain `"mcg"` and are correctly flagged, while numeric F/H cells
-elsewhere are not.
+**Key detail:** the whole check is skipped for rows where **both** Drug Name and Dosing Name are blank — an empty template row isn't a drug entry, so nothing is "missing" (this mirrors Rule 1). A row with a Drug Name *or* a Dosing Name is still a real entry and its other required fields are checked (e.g. a drug with a blank dosing still flags "Dosing Name empty"). Without this, a template's many trailing blank rows produced ~5 bogus "empty" issues each (184 on the Tift Regional file → 0 after the fix).
 
-### Rule 19 — Conc Unit (col E) & Diluent Unit (col G) Must Be Letters or Blank
-The mirror of Rule 18. Columns E (Conc Unit) and G (Diluent Unit) hold only the unit
-text (e.g. `"mg"`, `"mcg"`, `"mL"`) — each must be blank or contain **no digits**. A
-number in a unit column usually means a numeric amount was entered in the wrong column;
-the amount belongs in the matching amount column (F for E, H for G). Flagged if the cell
-contains any digit 0–9 (`450`, `"5mg"`); allowed if blank or purely non-numeric,
-including slash notation like `"mcg/kg"`. E and G are checked independently. Verified
-against the MultiCare file (all E/G cells are pure-letter units → no false positives).
+**Key detail — Rate-Mode-only sheets (e.g. a `BASIC` care area):** a sheet whose every drug entry starts with `"Rate Mode"` is exempt from the drug-library checks (no concentration/limits/spelling/etc.), but a few rules still apply and the sheet-skip branch runs them before `continue`-ing: **Rule 8** (KVO Mode col AT + Quick Recall col AV are still required on each entry) and **Rules 5 & 6** (the Rate Mode entries are the pump's drug list, which it alphabetizes — so the branch feeds `dosingGroups`/`drugOrderMap`, including the `Rate Mode …` names that Rule 5's normal collection otherwise excludes). In practice Rule 6 is moot on these sheets (one dosing per drug) but Rule 5 fires (the entered grouping — /hr then /min — differs from the pump's alphabetical order). Previously the whole sheet was skipped, so missing AT/AV **and** the drug-order surprise both went uncaught — both reported on the Tift Regional file.
 
-### Rule 20 — Dosing Name vs Entered Concentration
-Compares the concentration encoded in the Dosing Name (col D) against the entered
-concentration (cols E–H). The dosing name is parsed as `<amt> <unit> / <dilAmt> <dilUnit>`
-(e.g. `"1000 mcg / 250 mL"`; commas and missing spaces like `"100mL"` are tolerated).
-Two outcomes, shown with colored chips in the Issue cell:
-- **RED** (`conc-bad`, counts as an error) — the name and E–H do not match and their **final
-  concentration** (amt ÷ dilAmt) is also different, OR the units differ, OR E–H is not a valid
-  number. Example: name `1000 mcg / 250 mL` vs entered `1000 mcg / 100 mL`.
-- **YELLOW** (`conc-warn`, counts as a warning) — the numbers differ but the **final
-  concentration is the same** (e.g. name `1 mg / 1 mL` vs entered `100 mg / 100 mL`, both
-  1 mg/mL). Flagged as "likely intentional — verify," not a hard error.
+### Rule 9 — Too Many Decimal Places
+Any numeric dose/limit value may have at most 3 decimal places (minimum precision 0.001). Uses `toPrecision(15)` to strip floating-point noise before checking.
 
-Rows are skipped when the dosing name isn't a concentration expression (e.g. `"mL/hr"`), or
-when nothing is entered in E–H. This rule carries a per-issue `severity` (`err`/`warn`) rather
-than a fixed rule severity; the summary counts and section-header color honor it (see
-`i.severity || RULE_INFO[i.rule].severity` in `renderResults`). Verified against
-`MultiCare Corporate 3870 DERS 06.30.26.xlsx`: correctly flags PEDIATRIC row 8 (dexmedeTOMidine,
-250 mL name vs 100 mL entered) and ADULT row 13 (DOPamine, 250 mL vs 270 mL) as red, with no
-false positives on matching rows.
-
-### Rule 21 — Dose Unit & KVO Mode Columns Must Be Letters or Blank
-Columns I (Primary Dose Unit), T (Bolus Dose Unit), AE (Loading Dose Unit), and AT (KVO
-Mode) hold unit/mode text (e.g. `"mcg/kg/min"`, `"mL/hr"`, `"Continue Primary Rate"`) — each
-must be blank or contain **no digits**. A number here usually means a numeric value was
-entered in the wrong column. Slash notation and spaces are fine; only digits `0–9` are
-flagged. (Note: assumes no body-surface-area units like `mcg/m2` — confirmed not used by
-this site. If that changes, exclude the `m2`/`m²` pattern.) Blank is allowed; required-ness
-of I and AT is handled separately by Rule 5.
-
-### Rule 22 — Dose / Limit / Weight Columns Must Be Numbers or Blank
-Columns J–N (Primary dose + limits), U–Y (Bolus), AF–AJ (Loading), and AP–AS (Weight limits)
-must each be a number or left blank — no letters. Accepts numeric cells and plain numeric
-strings; flags any value containing letters. **Deliberately excludes** the time columns
-(O–S, Z–AD, AK–AO) and KVO Rate (AU), which are already validated as numeric by Rule 11 and
-Rule 17 respectively — this avoids double-reporting. Together, Rules 21 + 22 give every
-unit/mode column a letters-only guard and every dose/limit/weight column a numbers-only
-guard. Verified against the MultiCare file (0 false positives) and synthetic cases confirming
-letters in a time column report only under Rule 11, and in AU only under Rule 17.
-
-### Rule 23 — Possible Misspelling of "min" in a Dose Unit
-Rate-based dose units end in a time token — `min` or `hr` (e.g. `mcg/kg/min`, `mL/hr`). This rule
-takes the last `/`-separated segment of each dose-unit column (I = Primary, T = Bolus, AE = Loading)
-and flags it when it looks like a typo of **min**: either one edit away (`levenshtein(tok,'min')===1`,
-e.g. `kin`, `mim`, `mn`) or a transposition/anagram of the letters m-i-n (e.g. `mni`). Valid time
-tokens (`min`, `mins`, `minute(s)`, `hr`, `hour(s)`, `m`, `h`) and legitimate non-time units (`mg`,
-`mL`, `mcg`, `kg`, `units`, …) are left alone — those are ≥2 edits from `min`, so no false positives.
-Edit distance is capped at 1 deliberately: distance-2 would false-flag real units like `mg`. Verified
-against the Connecticut Children's file, where it correctly flags exactly one entry — lidocaine
-Primary Dose Unit `mcg/kg/kin` (should be `mcg/kg/min`) — and nothing else. Only "min" is checked
-(as requested); the same pattern could be extended to catch `hr` typos if needed.
-
-### Rule 24 — Possible Misspelling of "unit"/"units"
-`unit`/`units` are real drug units (heparin, insulin, vasopressin, …). This rule catches near-miss
-typos like `uniit` (should be `unit`). It checks three places: the **Conc Unit** cell (col E), the
-**numerator unit** written in the **Dosing Name** (col D — the letters right after the first amount,
-e.g. the `uniit` in `1 uniit/mL`), and each `/`-segment of the **dose-unit** columns (I / T / AE). A
-token is flagged when it's one edit from `unit` or `units`, or a transposition of their letters
-(`uint`, `nuit`, …). The Issue cell **highlights the wrong character(s)** in yellow (via
-`wrongPositions` + `buildSpellingHtml`, shared with Rule 14) and shows a "Did you mean *unit*?"
-suggestion — e.g. `uniit` renders as un[i]it with the extra `i` marked. The `looksLikeUnitWord` helper first excludes a dictionary of `VALID_UNIT_WORDS`
-(`mg`, `mcg`, `mL`, `kg`, `ng`, `unit`, `units`, **`milliunits`** and its abbreviation **`mUnits`/`mUnit`/`mU`**,
-`min`, `hr`, …) so real units are never flagged. This matters: `mUnits` (milliunits) is only one edit from
-`units` (delete the `m`), so without the dictionary entry it would be a false positive — as seen on
-Ascension's Vasopressin `mUnits/kg/min`. Both the spelled-out `milliunits` and the abbreviated `mUnits`
-appear legitimately in col I across templates. Note Rule 20 does
-NOT catch a `Dosing Name` like `1 uniit/mL` because it has no diluent *amount* (it's "per mL", not
-"/ X mL"), so its strict 4-part concentration regex doesn't match — Rule 24 covers that gap. Verified
-against the Connecticut Children's 07.24.26 file: flags exactly one entry (insulin regular, Dosing
-Name `1 uniit/mL`) with no false positives despite many `milliunits/kg/min` and `units/kg/hr` cells.
-
-### Rule 11 — Time Limit Column Not in hh:mm:ss Format
+### Rule 10 — Time Limit Column Not in hh:mm:ss Format
 Columns O–S (Primary time), Z–AD (Bolus time), AK–AO (Loading time) must contain Excel time values (stored internally as decimal fractions 0–1 representing fractions of a 24-hour day).
 
 Flags:
@@ -359,6 +256,147 @@ skipped for that cell (no confusing "exceeds 24 hours" on top). A `0`/negative i
 column is simply unused) and is not flagged. This catches e.g. milrinone with Primary Dose Unit
 `mcg/kg/min` and values in cols R/S — the root cause is the rate-based unit, not the number's size.
 
+## Concentration (11–15)
+
+### Rule 11 — mL-based Unit with Concentration Data
+If Primary Dose Unit (col I) is mL-based (`mL`, `mL/hr`, `mL/min`, etc.), columns E–H must be blank. Flags each non-blank concentration field individually.
+
+### Rule 12 — Conc Unit Filled Without Numeric Concentration Values
+If Conc Amount (F) and Diluent Amount (H) are both blank, Conc Unit (E) must also be blank. When a pharmacist intends a wildcard concentration (any concentration allowed), all three fields should be empty. A unit in E with no numbers in F/H is an incomplete entry.
+
+### Rule 13 — Conc Amount (col F) & Diluent Amount (col H) Must Be a Number or Blank
+Columns F (Conc Amount) and H (Diluent Amount) hold only numeric amounts — each must be
+a number, or left blank. Any letters/units in them (e.g. `"mcg"` in F, `"mL"` in H) are a
+data-entry error: the unit belongs in the matching unit column (Conc Unit col E for F,
+Diluent Unit col G for H), not the amount column. A value is accepted if it is a numeric
+cell or a plain numeric string (`450`, `0.5`); it is flagged if it contains letters or
+other non-numeric text (`"mcg"`, `"5 mcg"`). Blank is always allowed; F and H are checked
+independently (a bad F and a bad H on the same row produce two separate flags). Verified
+against `MultiCare Corporate 3870 DERS 06.30.26.xlsx`, where PEDIATRIC F5–F8 (PEDS
+dexmedeTOMidine) contain `"mcg"` and are correctly flagged, while numeric F/H cells
+elsewhere are not.
+
+### Rule 14 — Conc Unit (col E) & Diluent Unit (col G) Must Be Letters or Blank
+The mirror of Rule 13. Columns E (Conc Unit) and G (Diluent Unit) hold only the unit
+text (e.g. `"mg"`, `"mcg"`, `"mL"`) — each must be blank or contain **no digits**. A
+number in a unit column usually means a numeric amount was entered in the wrong column;
+the amount belongs in the matching amount column (F for E, H for G). Flagged if the cell
+contains any digit 0–9 (`450`, `"5mg"`); allowed if blank or purely non-numeric,
+including slash notation like `"mcg/kg"`. E and G are checked independently. Verified
+against the MultiCare file (all E/G cells are pure-letter units → no false positives).
+
+### Rule 15 — Dosing Name vs Entered Concentration
+Compares the concentration encoded in the Dosing Name (col D) against the entered
+concentration (cols E–H). The dosing name is parsed as `<amt> <unit> / <dilAmt> <dilUnit>`
+(e.g. `"1000 mcg / 250 mL"`; commas and missing spaces like `"100mL"` are tolerated).
+Two outcomes, shown with colored chips in the Issue cell:
+- **RED** (`conc-bad`, counts as an error) — the name and E–H do not match and their **final
+  concentration** (amt ÷ dilAmt) is also different, OR the units differ, OR E–H is not a valid
+  number. Example: name `1000 mcg / 250 mL` vs entered `1000 mcg / 100 mL`.
+- **YELLOW** (`conc-warn`, counts as a warning) — the numbers differ but the **final
+  concentration is the same** (e.g. name `1 mg / 1 mL` vs entered `100 mg / 100 mL`, both
+  1 mg/mL). Flagged as "likely intentional — verify," not a hard error.
+
+Rows are skipped when the dosing name isn't a concentration expression (e.g. `"mL/hr"`), or
+when nothing is entered in E–H. This rule carries a per-issue `severity` (`err`/`warn`) rather
+than a fixed rule severity; the summary counts and section-header color honor it (see
+`i.severity || RULE_INFO[i.rule].severity` in `renderResults`). Verified against
+`MultiCare Corporate 3870 DERS 06.30.26.xlsx`: correctly flags PEDIATRIC row 8 (dexmedeTOMidine,
+250 mL name vs 100 mL entered) and ADULT row 13 (DOPamine, 250 mL vs 270 mL) as red, with no
+false positives on matching rows.
+
+## Dose Units & Modes (16–21)
+
+### Rule 16 — Dose Unit & KVO Mode Columns Must Be Letters or Blank
+Columns I (Primary Dose Unit), T (Bolus Dose Unit), AE (Loading Dose Unit), and AT (KVO
+Mode) hold unit/mode text (e.g. `"mcg/kg/min"`, `"mL/hr"`, `"Continue Primary Rate"`) — each
+must be blank or contain **no digits**. A number here usually means a numeric value was
+entered in the wrong column. Slash notation and spaces are fine; only digits `0–9` are
+flagged. (Note: assumes no body-surface-area units like `mcg/m2` — confirmed not used by
+this site. If that changes, exclude the `m2`/`m²` pattern.) Blank is allowed; required-ness
+of I and AT is handled separately by Rule 8.
+
+### Rule 17 — Dose / Limit / Weight Columns Must Be Numbers or Blank
+Columns J–N (Primary dose + limits), U–Y (Bolus), AF–AJ (Loading), and AP–AS (Weight limits)
+must each be a number or left blank — no letters. Accepts numeric cells and plain numeric
+strings; flags any value containing letters. **Deliberately excludes** the time columns
+(O–S, Z–AD, AK–AO) and KVO Rate (AU), which are already validated as numeric by Rule 10 and
+Rule 26 respectively — this avoids double-reporting. Together, Rules 16 + 17 give every
+unit/mode column a letters-only guard and every dose/limit/weight column a numbers-only
+guard. Verified against the MultiCare file (0 false positives) and synthetic cases confirming
+letters in a time column report only under Rule 10, and in AU only under Rule 26.
+
+### Rule 18 — Mismatched Dose Units (mL Primary with non-mL Bolus/Loading)
+mL-based dose units are only compatible with other mL-based units. This rule flags a row where the
+Primary Dose Unit (col I) is mL-based (`mL`, `mL/hr`, …) but a Bolus (col T) or Loading (col AE) unit is
+**not** mL-based — or the reverse (a non-mL primary with an mL Bolus/Loading). Mixing them means the
+sections are dosed in incompatible units, which the pump can't reconcile. Blank sections are ignored;
+only filled units are compared. Severity: error.
+
+### Rule 19 — Bolus/Loading Fields Filled but Primary Unit Not Rate-Based
+The Bolus and Loading sections only make sense when the Primary Dose Unit (col I) is a **rate**
+(`/min` or `/hr`, via `isRateBasedUnit`). This rule flags a row where Bolus or Loading fields are filled
+in but the Primary unit isn't rate-based — those fields should be blank unless the primary is dosed as a
+rate. Severity: error.
+
+### Rule 20 — Possible Misspelling of "min" in a Dose Unit
+Rate-based dose units end in a time token — `min` or `hr` (e.g. `mcg/kg/min`, `mL/hr`). This rule
+takes the last `/`-separated segment of each dose-unit column (I = Primary, T = Bolus, AE = Loading)
+and flags it when it looks like a typo of **min**: either one edit away (`levenshtein(tok,'min')===1`,
+e.g. `kin`, `mim`, `mn`) or a transposition/anagram of the letters m-i-n (e.g. `mni`). Valid time
+tokens (`min`, `mins`, `minute(s)`, `hr`, `hour(s)`, `m`, `h`) and legitimate non-time units (`mg`,
+`mL`, `mcg`, `kg`, `units`, …) are left alone — those are ≥2 edits from `min`, so no false positives.
+Edit distance is capped at 1 deliberately: distance-2 would false-flag real units like `mg`. Verified
+against the Connecticut Children's file, where it correctly flags exactly one entry — lidocaine
+Primary Dose Unit `mcg/kg/kin` (should be `mcg/kg/min`) — and nothing else. Only "min" is checked
+(as requested); the same pattern could be extended to catch `hr` typos if needed.
+
+### Rule 21 — Possible Misspelling of "unit"/"units"
+`unit`/`units` are real drug units (heparin, insulin, vasopressin, …). This rule catches near-miss
+typos like `uniit` (should be `unit`). It checks three places: the **Conc Unit** cell (col E), the
+**numerator unit** written in the **Dosing Name** (col D — the letters right after the first amount,
+e.g. the `uniit` in `1 uniit/mL`), and each `/`-segment of the **dose-unit** columns (I / T / AE). A
+token is flagged when it's one edit from `unit` or `units`, or a transposition of their letters
+(`uint`, `nuit`, …). The Issue cell **highlights the wrong character(s)** in yellow (via
+`wrongPositions` + `buildSpellingHtml`, shared with Rule 3) and shows a "Did you mean *unit*?"
+suggestion — e.g. `uniit` renders as un[i]it with the extra `i` marked. The `looksLikeUnitWord` helper first excludes a dictionary of `VALID_UNIT_WORDS`
+(`mg`, `mcg`, `mL`, `kg`, `ng`, `unit`, `units`, **`milliunits`** and its abbreviation **`mUnits`/`mUnit`/`mU`**,
+`min`, `hr`, …) so real units are never flagged. This matters: `mUnits` (milliunits) is only one edit from
+`units` (delete the `m`), so without the dictionary entry it would be a false positive — as seen on
+Ascension's Vasopressin `mUnits/kg/min`. Both the spelled-out `milliunits` and the abbreviated `mUnits`
+appear legitimately in col I across templates. Note Rule 15 does
+NOT catch a `Dosing Name` like `1 uniit/mL` because it has no diluent *amount* (it's "per mL", not
+"/ X mL"), so its strict 4-part concentration regex doesn't match — Rule 21 covers that gap. Verified
+against the Connecticut Children's 07.24.26 file: flags exactly one entry (insulin regular, Dosing
+Name `1 uniit/mL`) with no false positives despite many `milliunits/kg/min` and `units/kg/hr` cells.
+
+## Limits & Ranges (22–23)
+
+### Rule 22 — Limits Not in Descending Order
+For each of Primary, Bolus, Loading, and Weight sections, limits must satisfy:  
+`Upper Hard ≥ Upper Soft ≥ Initial Dose ≥ Lower Soft ≥ Lower Hard`  
+Only compares fields that are actually filled in. Checks adjacent pairs in that positional order.
+
+### Rule 23 — Weight Outside 0.1–350 kg
+Weight limit columns (AP–AS) must be between 0.1 and 999 kg if filled.
+
+## KVO (24–26)
+
+### Rule 24 — KVO Rate Missing or Out of Range
+When KVO Mode (AT) = `"Rate"` (case-insensitive), KVO Rate (AU) must be present and between **0.4 and 20 mL/hr**.
+
+### Rule 25 — KVO Rate Should Be Blank
+When KVO Mode = `"Off"` or `"Continue Primary Rate"`, KVO Rate (AU) must be empty.
+
+### Rule 26 — KVO Rate Out of Range (universal AU value check)
+Independent of KVO Mode: KVO Rate (AU), *if not blank*, must be a **number between
+0.4 and 20 mL/hr** (inclusive). Flags non-numeric values (e.g. text like `"5 mL/hr"`)
+and numbers outside the range. Blank is always allowed. This complements Rules 24 & 25
+(which are mode-specific) and fills the gaps they miss — e.g. a non-numeric rate under
+Rate mode, or an out-of-range value when Mode is blank or unrecognized. To avoid
+double-reporting, Rule 26 is suppressed on a cell already flagged by Rule 24 (Rate mode,
+numeric out of range) or Rule 25 (Off/Continue with any value).
+
 ---
 
 ## Key JS Functions
@@ -369,7 +407,7 @@ column is simply unused) and is not flagged. This catches e.g. milrinone with Pr
 | `renderResults(issues)` | Groups issues by rule, builds DOM |
 | `fillRatio(str)` | Returns display fill ratio (0–1+) for a string using character capacity tables |
 | `buildOverflowHtml(str)` | Returns HTML with overflow chars highlighted red; uses `SPLIT_THRESHOLD = 1.13` |
-| `naturalCompare(a, b)` | Comparator treating embedded digit runs numerically (for Rule 10) |
+| `naturalCompare(a, b)` | Comparator treating embedded digit runs numerically (for Rule 6) |
 | `toggleSection(header)` | Expand/collapse a rule section |
 | `escHtml(str)` | HTML-escape helper |
 | `processFile(file)` | Reads file via FileReader → SheetJS |
@@ -381,6 +419,6 @@ column is simply unused) and is not flagged. This catches e.g. milrinone with Pr
 
 - **No server-side processing** — everything runs in the browser. File never leaves the user's machine.
 - **SheetJS CDN dependency** — if `cdnjs.cloudflare.com` is unavailable, the tool won't parse files. For a production deployment, consider vendoring `xlsx.full.min.js` locally.
-- **Rule 9 calibration** — the `SPLIT_THRESHOLD = 1.13` was calibrated against a specific pump screen (7 confirmed data points, max fit ratio 1.104). If iRadimed ships a firmware update that changes the font, this value may need adjustment.
-- **Rule 10 natural sort** — sorts primarily by the first number found anywhere in the dosing name (handles both "5mg" vs "10mg" inversions AND embedded-number cases like "Single (1mg/mL)" vs "Double (2mg/mL)" vs "QUAD (4mg/mL)"). Does not handle locale-specific sorting edge cases.
+- **Rule 4 calibration** — the `SPLIT_THRESHOLD = 1.13` was calibrated against a specific pump screen (7 confirmed data points, max fit ratio 1.104). If iRadimed ships a firmware update that changes the font, this value may need adjustment.
+- **Rule 6 natural sort** — sorts primarily by the first number found anywhere in the dosing name (handles both "5mg" vs "10mg" inversions AND embedded-number cases like "Single (1mg/mL)" vs "Double (2mg/mL)" vs "QUAD (4mg/mL)"). Does not handle locale-specific sorting edge cases.
 - **Quick Recall (AV)** — checked as required only when the column is present in the template. Templates without AV are silently skipped for that check.
