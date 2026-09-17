@@ -100,8 +100,9 @@ The tool expects the standard iRadimed LF477 Excel layout:
 
 > **Grouping.** Rules are numbered in thematic groups so related checks sit next to each other:
 > **Names & Ordering (1–7)**, **Required Fields & Formatting (8–10)**, **Concentration (11–15)**,
-> **Dose Units & Modes (16–21)**, **Limits & Ranges (22–23)**, **KVO (24–26)**. The number is just an
-> identifier — display order in the app and this list both follow it.
+> **Dose Units & Modes (16–21)**, **Limits & Ranges (22–23)**, **KVO (24–26)**, **Safety /
+> Contraindications (27)**. The number is just an identifier — display order in the app and this list
+> both follow it.
 
 ## Names & Ordering (1–7)
 
@@ -396,6 +397,33 @@ and numbers outside the range. Blank is always allowed. This complements Rules 2
 Rate mode, or an out-of-range value when Mode is blank or unrecognized. To avoid
 double-reporting, Rule 26 is suppressed on a cell already flagged by Rule 24 (Rate mode,
 numeric out of range) or Rule 25 (Off/Continue with any value).
+
+## Safety / Contraindications (27)
+
+### Rule 27 — Contraindicated Drug Type
+Per the MRidium 3870 label, the pump is **not intended for use with blood, blood products, chemotherapy
+drugs, drugs affected by UV light, or enteral/parenteral nutritional feeding solutions.** This rule scans
+the **Drug Name (col C)** and **Dosing Name (col D)** for keywords / known agents in those categories and
+flags a match (severity: **error**) with a "verify and remove if it applies" message. The page also shows
+the label's warning box above the drop zone. Three category matchers (`CONTRA_RULES`, word-boundary
+regexes, first match wins, ≤1 flag per category per row):
+- **Blood product** — `blood`, `RBC`/`PRBC`, `packed red (blood cells)`, `whole blood`, `platelet(s)`,
+  `fresh frozen plasma`/`FFP`, `plasma`/`plasmanate`, `cryoprecipitate`/`cryo`, `transfus…`.
+- **Enteral / parenteral nutrition** — `TPN`, `PPN`, `parenteral nutrition`, `enteral`, `tube feed…`,
+  `nutrition…`, `feeding solution`, `intralipid`, `SMOF…`, `fat/lipid emulsion`, and amino-acid
+  solutions (`aminosyn`, `travasol`, `clinimix`, `trophamine`, `prosol`, `plenamine`, `nephramine`).
+- **Chemotherapy / antineoplastic** — `chemo…` plus a curated list of ~50 common cytotoxic agents and
+  oncology monoclonal antibodies (cisplatin, doxorubicin, methotrexate, 5-FU, paclitaxel, vincristine,
+  rituximab, …).
+
+**Look-alike allow-list (`CONTRA_ALLOW`):** `Plasma-Lyte`/`PlasmaLyte` is a crystalloid maintenance fluid,
+not a plasma blood product, so it is explicitly exempted (otherwise bare `plasma` would flag it).
+
+**Keyword-based, not exhaustive** — chemotherapy has hundreds of agents; this catches the common ones and
+obvious category words. It surfaces candidates for the pharmacist to confirm, it is not a substitute for
+review. **Calibration:** across 173 real templates it flags exactly one genuine entry — Lake Regional's
+`Blood (RBC's)` drug — with **zero** false positives (verified Propofol, Plasma-Lyte, insulin, DOPamine,
+NORepinephrine, LORazepam, and every other real drug name are left alone).
 
 ---
 

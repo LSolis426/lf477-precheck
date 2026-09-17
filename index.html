@@ -82,6 +82,11 @@
   .pill-blue { background: #dbeafe; color: #1e40af; }
 
   .ok-banner { padding: 16px 20px; color: #1a7f45; font-size: 13px; font-weight: 500; }
+  .pump-warning { display: flex; align-items: flex-start; gap: 14px; margin: 0 0 22px;
+    padding: 14px 18px; background: #fffbeb; border: 2px solid #111; border-radius: 8px; }
+  .pump-warning .pw-icon { flex: none; font-size: 26px; line-height: 1.1; }
+  .pump-warning p { margin: 0; font-size: 13.5px; line-height: 1.5; color: #1f2937; }
+  .pump-warning strong { color: #92400e; }
 
   .rule-label { font-size: 11px; color: #888; }
   .drug-col { font-weight: 500; }
@@ -286,6 +291,13 @@
 
 <div class="container">
 
+  <div class="pump-warning" role="note">
+    <span class="pw-icon" aria-hidden="true">⚠️</span>
+    <p><strong>WARNING:</strong> The MRidium 3870 MRI Infusion Pump is not intended for use with blood, blood
+    products, chemotherapy drugs, drugs affected by UV light, or enteral/parenteral nutritional feeding
+    solutions. (Rule 27 scans the template for these.)</p>
+  </div>
+
   <div id="drop-zone" onclick="document.getElementById('file-input').click()">
     <div class="icon">📂</div>
     <h2>Drop LF477 Excel template here</h2>
@@ -392,7 +404,7 @@ const UC = {A:20,B:19,C:20,D:17,E:22,F:24,G:17,H:16,I:31,J:31,K:20,L:24,M:13,N:1
 // model predicted ("Midazolam-status epilepticus" → pump cut "us").
 const OTHER_CAP = 28;
 
-// Rule 9 fit threshold: fillRatio above this is flagged as too long for the pump display field.
+// Rule 4 fit threshold: fillRatio above this is flagged as too long for the pump display field.
 // This is a HEURISTIC width model, not the pump's real font metrics — it can't reproduce every
 // truncation exactly (confirmed pump data has fitting names the model rates higher than some
 // truncating ones, which no single threshold can separate). So the threshold is set to the
@@ -401,7 +413,7 @@ const OTHER_CAP = 28;
 //   - shortest confirmed truncation is "LORazepam (concentrated)" = 1.066 (flagged)
 // 1.063 sits between them; validated across real templates (only genuinely-long names flip, no flood).
 // Because it's conservative, the red-marked region may over-estimate a little (the safe direction) —
-// the Rule 9 header tells users to confirm borderline names in the emulator.
+// the Rule 4 header tells users to confirm borderline names in the emulator.
 const NAME_FIT_THRESHOLD = 1.063;
 
 function fillRatio(str) {
@@ -419,7 +431,7 @@ function fillRatio(str) {
 //   "EPINEPHrine mcg/kg/min" 1.077, "NORepinephrine mcg/min" 1.086, "NORepinephrine mcg/kg/" 1.073,
 //   "NORepinephri mcg/kg/mn" 1.104, " Wt Based: 0.075 mg/mLa" 1.176 (emulator-confirmed) — all fit.
 //   Threshold 1.20; "NORepinephrine mcg/kg/min" (1.232) still overflows and splits correctly at '/'.
-// Names flagged by Rule 9 always have ratio > NAME_FIT_THRESHOLD, so splitIdx is always found.
+// Names flagged by Rule 4 always have ratio > NAME_FIT_THRESHOLD, so splitIdx is always found.
 function buildOverflowHtml(str) {
   const SPLIT_THRESHOLD = NAME_FIT_THRESHOLD;
   let ratio = 0;
@@ -470,7 +482,7 @@ function colLetter(idx) {
   return col;
 }
 
-// ── Rule 14: Known IV drug reference list (canonical spelling) ───────────────
+// ── Rule 3: Known IV drug reference list (canonical spelling) ───────────────
 const KNOWN_DRUGS_CANONICAL = [
   // Pharmacist-provided common drugs:
   'Adenosine','Alprostadil','Alteplase','Amiodarone','Argatroban','Atracurium',
@@ -525,6 +537,32 @@ function unitMisspellTarget(tok) {
   const sorted = [...tok].sort().join('');
   if (levenshtein(tok, 'unit')  === 1 || sorted === 'intu')  return 'unit';   // 1 edit / anagram of "unit"
   if (levenshtein(tok, 'units') === 1 || sorted === 'instu') return 'units';  // 1 edit / anagram of "units"
+  return null;
+}
+
+// ── Rule 27: Contraindicated drug types ───────────────────────────────────────
+// Per the MRidium 3870 label, the pump is NOT intended for use with blood, blood
+// products, chemotherapy drugs, drugs affected by UV light, or enteral/parenteral
+// nutritional feeding solutions. This scans Drug Name (C) and Dosing Name (D) for
+// keywords / known agents in those categories. Keyword-based and deliberately NOT
+// exhaustive (chemotherapy especially has hundreds of agents) — it surfaces likely
+// candidates for the pharmacist to confirm and remove. Matching is word-boundary
+// aware, with a small allow-list for look-alikes (e.g. Plasma-Lyte is a crystalloid
+// maintenance fluid, not a plasma blood product).
+const CONTRA_ALLOW = /\bplasma[\s-]*lyte\b|\bplasmalyte\b/i;
+const CONTRA_RULES = [
+  { cat: 'blood product', re: /\b(blood|p?rbcs?|packed red(?:\s+blood)?(?:\s+cells?)?|red blood cells?|whole blood|platelets?|fresh frozen plasma|ffp|plasma|plasmanate|cryoprecipitate|cryo|transfus\w*)\b/i },
+  { cat: 'enteral / parenteral nutrition solution', re: /\b(tpn|ppn|parenteral nutrition|enteral|tube[\s-]?feed\w*|nutrition\w*|feeding solution|intralipid|smof\w*|fat emulsion|lipid emulsion|aminosyn|travasol|clinimix|trophamine|prosol|plenamine|nephramine)\b/i },
+  { cat: 'chemotherapy / antineoplastic drug', re: /\b(chemo\w*|cisplatin|carboplatin|oxaliplatin|doxorubicin|doxil|daunorubicin|epirubicin|idarubicin|cyclophosphamide|ifosfamide|methotrexate|pemetrexed|fluorouracil|5[\s-]?fu|capecitabine|gemcitabine|cytarabine|paclitaxel|docetaxel|cabazitaxel|vincristine|vinblastine|vinorelbine|etoposide|irinotecan|topotecan|bleomycin|mitomycin|mitoxantrone|dacarbazine|temozolomide|bendamustine|bortezomib|carfilzomib|azacitidine|decitabine|fludarabine|melphalan|busulfan|carmustine|lomustine|chlorambucil|dactinomycin|asparaginase|pegaspargase|rituximab|bevacizumab|cetuximab|trastuzumab|pertuzumab|brentuximab|obinutuzumab|blinatumomab|daratumumab|nivolumab|pembrolizumab|ipilimumab|atezolizumab)\b/i },
+];
+// Returns { cat, term } for the first contraindicated category matched in `name`, or null.
+function findContraindication(name) {
+  const s = String(name || '');
+  if (!s.trim() || CONTRA_ALLOW.test(s)) return null;
+  for (const { cat, re } of CONTRA_RULES) {
+    const m = s.match(re);
+    if (m) return { cat, term: m[0] };
+  }
   return null;
 }
 
@@ -605,9 +643,9 @@ function pumpCompare(aStr, bStr) {
 function validate(workbook) {
   const allIssues = [];
   const dupGroups = new Map();    // Rule 1: pairKey → [loc, ...]
-  const dosingGroups = new Map(); // Rule 10: "sheet|||care|||drug" → [{dosing, row}]
-  const drugOrderMap = new Map(); // Rule 13: "sheet|||care" → { sheet, care, drugs: [{name, row}] }
-  const drugCaseMap = new Map();  // Rule 25: "sheet|||care" → Map(normalizedName → Map(rawName → [rows]))
+  const dosingGroups = new Map(); // Rule 6: "sheet|||care|||drug" → [{dosing, row}]
+  const drugOrderMap = new Map(); // Rule 5: "sheet|||care" → { sheet, care, drugs: [{name, row}] }
+  const drugCaseMap = new Map();  // Rule 2: "sheet|||care" → Map(normalizedName → Map(rawName → [rows]))
 
   for (const sheetName of workbook.SheetNames) {
     const ws = workbook.Sheets[sheetName];
@@ -619,8 +657,8 @@ function validate(workbook) {
 
     // Sheets where every drug entry is a "Rate Mode" placeholder (e.g. a BASIC care area) don't get
     // the drug-library checks (concentration, limits, spelling, …). But a few still apply: KVO Mode
-    // (col AT) and Quick Recall (col AV) are required (Rule 5), and these entries still form the pump's
-    // drug list, which it alphabetizes — so the display-order checks (Rules 10 & 13) run too.
+    // (col AT) and Quick Recall (col AV) are required (Rule 8), and these entries still form the pump's
+    // drug list, which it alphabetizes — so the display-order checks (Rules 6 & 5) run too.
     const rowsWithDrug = data.slice(3).filter(r => r && !r.every(isEmpty) && !isEmpty(r[C.DRUG_NAME]));
     if (rowsWithDrug.length > 0 &&
         rowsWithDrug.every(r => String(r[C.DRUG_NAME]).trim().toLowerCase().startsWith('rate mode'))) {
@@ -631,12 +669,12 @@ function validate(workbook) {
         if (isEmpty(row[C.DRUG_NAME])) continue;
         const care = caFill;
         const loc = { sheet: sheetName, row: ri + 1, care, drug: row[C.DRUG_NAME], dosing: row[C.DOSING_NAME] };
-        // Rule 5 — required fields still apply to Rate Mode entries
+        // Rule 8 — required fields still apply to Rate Mode entries
         if (isEmpty(row[C.KVO_MODE])) allIssues.push({ rule: 8, ...loc, msg: 'KVO Mode (col AT) is empty' });
         if (hasQuickRecall && isEmpty(row[C.QUICK_RCL])) {
           allIssues.push({ rule: 8, ...loc, msg: 'Quick Recall (col AV) is empty — required when this column is present' });
         }
-        // Rules 10 & 13 — feed the pump display-order checks (drug list gets alphabetized).
+        // Rules 6 & 5 — feed the pump display-order checks (drug list gets alphabetized).
         const ordKey = `${sheetName}|||${String(care||'').trim()}|||${String(row[C.DRUG_NAME]||'').trim()}`;
         if (!dosingGroups.has(ordKey)) dosingGroups.set(ordKey, []);
         dosingGroups.get(ordKey).push({ dosing: String(row[C.DOSING_NAME]||''), row: ri + 1 });
@@ -646,7 +684,7 @@ function validate(workbook) {
         const dn = String(row[C.DRUG_NAME]).trimEnd();
         if (!d13.drugs.some(x => x.name.toLowerCase() === dn.toLowerCase())) d13.drugs.push({ name: dn, row: ri + 1 });
       }
-      continue; // Rate-Mode-only sheet — drug-library checks skipped; Rules 5/10/13 handled above
+      continue; // Rate-Mode-only sheet — drug-library checks skipped; Rules 8/6/5 handled above
     }
 
     // Data rows start at index 3 (Excel row 4)
@@ -675,12 +713,12 @@ function validate(workbook) {
         dupGroups.get(pairKey).push(loc);
       }
 
-      // ── Rule 10: Collect dosing names per (sheet, care area, drug) ───────
+      // ── Rule 6: Collect dosing names per (sheet, care area, drug) ───────
       const ordKey = `${sheetName}|||${String(careArea||'').trim()}|||${String(drugName||'').trim()}`;
       if (!dosingGroups.has(ordKey)) dosingGroups.set(ordKey, []);
       dosingGroups.get(ordKey).push({ dosing: String(dosingName||''), row: excelRow });
 
-      // ── Rule 13: Collect drug names per (sheet, care area) in template order
+      // ── Rule 5: Collect drug names per (sheet, care area) in template order
       if (!isEmpty(drugName) && !String(drugName).trim().toLowerCase().startsWith('rate mode')) {
         const caKey13 = `${sheetName}|||${String(careArea||'').trim()}`;
         if (!drugOrderMap.has(caKey13)) drugOrderMap.set(caKey13, { sheet: sheetName, care: careArea, drugs: [] });
@@ -690,7 +728,7 @@ function validate(workbook) {
           d13.drugs.push({ name: dn, row: excelRow });
         }
 
-        // ── Rule 25: Collect raw drug-name spellings per (sheet, care area), grouped by a
+        // ── Rule 2: Collect raw drug-name spellings per (sheet, care area), grouped by a
         // normalized key (trim + collapse internal whitespace + lowercase). Multiple distinct raw
         // spellings sharing one key = "same name to a clinician, separate entries on the pump".
         const norm = String(drugName).trim().replace(/\s+/g, ' ').toLowerCase();
@@ -703,7 +741,22 @@ function validate(workbook) {
         spellings.get(rawName).push(excelRow);
       }
 
-      // ── Rule 5: Required fields ───────────────────────────────────────────
+      // ── Rule 27: Contraindicated drug types (blood, chemo, TPN/enteral nutrition) ──
+      // The 3870 is not intended for these. Scan Drug Name (C) and Dosing Name (D);
+      // report at most one flag per category per row.
+      {
+        const seenCat = new Set();
+        for (const [field, val] of [['Drug Name (col C)', drugName], ['Dosing Name (col D)', dosingName]]) {
+          const hit = findContraindication(val);
+          if (hit && !seenCat.has(hit.cat)) {
+            seenCat.add(hit.cat);
+            allIssues.push({ rule: 27, ...loc,
+              msg: `${field} "${String(val).trim()}" looks like a ${hit.cat} (matched "${hit.term}"). The MRidium 3870 is NOT intended for blood/blood products, chemotherapy drugs, UV-light-sensitive drugs, or enteral/parenteral nutrition — verify and remove it if this applies.` });
+          }
+        }
+      }
+
+      // ── Rule 8: Required fields ───────────────────────────────────────────
       // Only check rows that are actually a drug entry (a Drug Name and/or Dosing Name present).
       // Rows with both blank are empty template rows — nothing is "missing" on an unused row.
       if (!isEmpty(drugName) || !isEmpty(dosingName)) {
@@ -717,7 +770,7 @@ function validate(workbook) {
         }
       }
 
-      // ── Rule 2: mL-based Primary Dose Unit → cols E–H must be blank ──────
+      // ── Rule 11: mL-based Primary Dose Unit → cols E–H must be blank ──────
       if (isMLUnit(row[C.PRI_UNIT])) {
         const mCheck = [
           [C.CONC_UNIT, 'E (Conc Unit)'],
@@ -732,7 +785,7 @@ function validate(workbook) {
         }
       }
 
-      // ── Rule 15: Bolus/Loading dose units must match mL vs non-mL of Primary ─
+      // ── Rule 18: Bolus/Loading dose units must match mL vs non-mL of Primary ─
       const priIsMl = isMLUnit(row[C.PRI_UNIT]);
       const secUnits15 = [
         [C.BOL_UNIT, 'T (Bolus Dose Unit)',    'Bolus'],
@@ -751,7 +804,7 @@ function validate(workbook) {
         }
       }
 
-      // ── Rule 16: Bolus/Loading fields must be blank if primary unit is not /min or /hr ──
+      // ── Rule 19: Bolus/Loading fields must be blank if primary unit is not /min or /hr ──
       if (!isEmpty(row[C.PRI_UNIT])) {
         const isRateBased = isRateBasedUnit(row[C.PRI_UNIT]);
         if (!isRateBased) {
@@ -772,7 +825,7 @@ function validate(workbook) {
         }
       }
 
-      // ── Rule 3: Limits in descending order ───────────────────────────────
+      // ── Rule 22: Limits in descending order ───────────────────────────────
       const limitSets = [
         { section: 'Primary',  vals: [
           { lbl: 'Upper Hard (K)', v: row[C.PRI_UH] },
@@ -812,7 +865,7 @@ function validate(workbook) {
         }
       }
 
-      // ── Rule 3 (time limits): same descending order check for time columns ─
+      // ── Rule 22 (time limits): same descending order check for time columns ─
       const fmtTime = v => {
         const totalSec = Math.round(v * 86400);
         const h = Math.floor(totalSec / 3600);
@@ -844,7 +897,7 @@ function validate(workbook) {
         ]},
       ];
       for (const { section, vals } of timeLimitSets) {
-        // Only compare valid time fractions (0 < v ≤ 1); skip strings/bad values caught by Rule 11
+        // Only compare valid time fractions (0 < v ≤ 1); skip strings/bad values caught by Rule 10
         const filled = vals.filter(x => typeof x.v === 'number' && x.v > 0 && x.v <= 1);
         for (let i = 0; i < filled.length - 1; i++) {
           if (filled[i].v < filled[i + 1].v) {
@@ -855,7 +908,7 @@ function validate(workbook) {
         }
       }
 
-      // ── Rule 4: No more than 3 decimal places ────────────────────────────
+      // ── Rule 9: No more than 3 decimal places ────────────────────────────
       const numericFields = [
         [C.PRI_INIT,'J (Primary Initial)'], [C.PRI_UH,'K (Primary Upper Hard)'],
         [C.PRI_LH, 'L (Primary Lower Hard)'],[C.PRI_US,'M (Primary Upper Soft)'],
@@ -874,10 +927,10 @@ function validate(workbook) {
         }
       }
 
-      // ── Rules 6 & 7: KVO Mode / KVO Rate ────────────────────────────────
+      // ── Rules 24 & 25: KVO Mode / KVO Rate ────────────────────────────────
       const kvoMode = row[C.KVO_MODE];
       const kvoRate = row[C.KVO_RATE];
-      let kvoRateAlreadyFlagged = false; // set when Rule 6/7 already flags this cell, so Rule 17 doesn't double-report
+      let kvoRateAlreadyFlagged = false; // set when Rule 24/25 already flags this cell, so Rule 26 doesn't double-report
       if (!isEmpty(kvoMode)) {
         const km = String(kvoMode).trim().toLowerCase();
         if (km === 'rate') {
@@ -895,8 +948,8 @@ function validate(workbook) {
         }
       }
 
-      // ── Rule 17: KVO Rate (col AU) must be blank or a number between 0.4 and 20 (any mode) ──
-      // Universal value check on the cell, independent of KVO Mode. Skipped when Rule 6/7 already
+      // ── Rule 26: KVO Rate (col AU) must be blank or a number between 0.4 and 20 (any mode) ──
+      // Universal value check on the cell, independent of KVO Mode. Skipped when Rule 24/25 already
       // flagged this same cell, so a single problem isn't reported twice.
       if (!isEmpty(kvoRate) && !kvoRateAlreadyFlagged) {
         if (typeof kvoRate !== 'number') {
@@ -906,7 +959,7 @@ function validate(workbook) {
         }
       }
 
-      // ── Rule 8: Weight values 0.1–350 kg ─────────────────────────────────
+      // ── Rule 23: Weight values 0.1–350 kg ─────────────────────────────────
       const weightFields = [
         [C.WT_UH,'AP (Weight Upper Hard)'],[C.WT_LH,'AQ (Weight Lower Hard)'],
         [C.WT_US,'AR (Weight Upper Soft)'],[C.WT_LS,'AS (Weight Lower Soft)'],
@@ -918,7 +971,7 @@ function validate(workbook) {
         }
       }
 
-      // ── Rule 9: Name fits in display field ───────────────────────────────
+      // ── Rule 4: Name fits in display field ───────────────────────────────
       const nameFields = [
         { label: 'Care Area (col B)', val: careArea },
         { label: 'Drug Name (col C)', val: drugName },
@@ -941,7 +994,7 @@ function validate(workbook) {
         }
       }
 
-      // ── Rule 11: Time limit columns must be hh:mm:ss (numeric fraction) ──
+      // ── Rule 10: Time limit columns must be hh:mm:ss (numeric fraction) ──
       for (const { idx, label } of TIME_COLS) {
         const v = row[idx];
         if (isEmpty(v)) continue;
@@ -994,7 +1047,7 @@ function validate(workbook) {
         });
       }
 
-      // ── Rule 18: Conc Amount (col F) & Diluent Amount (col H) must be a number or blank ──
+      // ── Rule 13: Conc Amount (col F) & Diluent Amount (col H) must be a number or blank ──
       // These columns hold numeric amounts only. Text like "mcg" or "mL" belongs in the matching
       // unit column (E for F, G for H) — a letter/unit value in an amount column is a data-entry error.
       const amountChecks = [
@@ -1014,10 +1067,10 @@ function validate(workbook) {
         }
       }
 
-      // ── Rule 19: Conc Unit (col E) & Diluent Unit (col G) must be letters or blank (no numbers) ──
+      // ── Rule 14: Conc Unit (col E) & Diluent Unit (col G) must be letters or blank (no numbers) ──
       // These are unit columns (e.g. "mg", "mcg", "mL"). A digit here usually means a numeric amount
       // was entered in the unit column by mistake — the amount belongs in the matching amount column
-      // (F for E, H for G). Mirror of Rule 18.
+      // (F for E, H for G). Mirror of Rule 13.
       const unitChecks = [
         { idx: C.CONC_UNIT, label: 'Conc Unit (col E)',    amtCol: 'Conc Amount (col F)' },
         { idx: C.DIL_UNIT,  label: 'Diluent Unit (col G)', amtCol: 'Diluent Amount (col H)' },
@@ -1032,7 +1085,7 @@ function validate(workbook) {
         }
       }
 
-      // ── Rule 20: Dosing Name (col D) concentration vs entered concentration (cols E–H) ──
+      // ── Rule 15: Dosing Name (col D) concentration vs entered concentration (cols E–H) ──
       // The dosing name usually encodes a concentration as "<amt> <unit> / <dilAmt> <dilUnit>"
       // (e.g. "1000 mcg / 250 mL"). Compare it against the entered E/F/G/H values:
       //   • RED    — they do not match and the final concentration (amt ÷ dilAmt) is also different.
@@ -1085,7 +1138,7 @@ function validate(workbook) {
         }
       })();
 
-      // ── Rule 21: Dose Unit & KVO Mode columns (I, T, AE, AT) must be letters or blank (no numbers) ──
+      // ── Rule 16: Dose Unit & KVO Mode columns (I, T, AE, AT) must be letters or blank (no numbers) ──
       // These hold unit/mode text (e.g. "mcg/kg/min", "mL/hr", "Continue Primary Rate"). A digit here
       // usually means a numeric value was entered in the wrong column.
       const letterOnlyChecks = [
@@ -1104,9 +1157,9 @@ function validate(workbook) {
         }
       }
 
-      // ── Rule 22: Dose / limit / weight columns must be a number or blank (no letters) ──
+      // ── Rule 17: Dose / limit / weight columns must be a number or blank (no letters) ──
       // Covers J–N (Primary), U–Y (Bolus), AF–AJ (Loading), AP–AS (Weight). Time columns
-      // (O–S, Z–AD, AK–AO) are validated by Rule 11 and KVO Rate (AU) by Rule 17, so they are
+      // (O–S, Z–AD, AK–AO) are validated by Rule 10 and KVO Rate (AU) by Rule 26, so they are
       // excluded here to avoid double-reporting.
       const numberOnlyChecks = [
         [C.PRI_INIT,'Primary Initial Dose (col J)'], [C.PRI_UH,'Primary Upper Hard (col K)'],
@@ -1132,7 +1185,7 @@ function validate(workbook) {
         }
       }
 
-      // ── Rule 23: Likely misspelling of "min" in a dose unit (cols I / T / AE) ──
+      // ── Rule 20: Likely misspelling of "min" in a dose unit (cols I / T / AE) ──
       // Rate units end in a time token — "min" or "hr". Catch a last "/"-segment that is one typo
       // away from "min" (e.g. "mcg/kg/kin") or a transposition of it ("mni"), but leave valid time
       // tokens and legitimate non-time units (mg, mL, mcg, kg, units, …) alone.
@@ -1156,7 +1209,7 @@ function validate(workbook) {
         }
       }
 
-      // ── Rule 24: Likely misspelling of "unit"/"units" ──
+      // ── Rule 21: Likely misspelling of "unit"/"units" ──
       // "unit"/"units" appear as concentration/dose units (heparin, insulin, vasopressin, …).
       // Catch near-miss typos like "uniit" (should be "unit"). Checks the Conc Unit (col E), the
       // numerator unit written in the Dosing Name (col D), and each "/"-segment of the dose-unit
@@ -1182,7 +1235,7 @@ function validate(workbook) {
         }
       }
 
-      // ── Rule 14: Drug name spelling ────────────────────────────────────────
+      // ── Rule 3: Drug name spelling ────────────────────────────────────────
       if (!isEmpty(drugName) && !String(drugName).trim().toLowerCase().startsWith('rate mode')) {
         const trimmedDrug = String(drugName).trimEnd();
         // Extract first alphabetic run (handles Tallman lettering like EPINEPHrine, leading spaces)
@@ -1233,7 +1286,7 @@ function validate(workbook) {
     }
   }
 
-  // ── Rule 10 finalization: detect when pump alphabetical order differs from template entry order ─
+  // ── Rule 6 finalization: detect when pump alphabetical order differs from template entry order ─
   for (const [ordKey, entries] of dosingGroups) {
     if (entries.length < 2) continue;
     const [sheet, care, drug] = ordKey.split('|||');
@@ -1331,7 +1384,7 @@ function validate(workbook) {
     });
   }
 
-  // ── Rule 13 finalization: drug name order within each care area ─────────
+  // ── Rule 5 finalization: drug name order within each care area ─────────
   for (const [, { sheet, care, drugs }] of drugOrderMap) {
     if (drugs.length < 2) continue;
     // Pump order: case-insensitive, space/symbols < letters < ~ (tilde sorts after z).
@@ -1352,7 +1405,7 @@ function validate(workbook) {
     });
   }
 
-  // ── Rule 25 finalization: Drug Names that differ only by capitalization / whitespace ────
+  // ── Rule 2 finalization: Drug Names that differ only by capitalization / whitespace ────
   // Within a care area, spellings that normalize to the same key but were entered differently
   // (e.g. "vasopressin -   Shock" vs "vasopressin -   SHOCK") program as SEPARATE pump entries
   // even though a clinician sees them as the same drug.
@@ -1377,7 +1430,7 @@ function validate(workbook) {
     }
   }
 
-  // ── Rule 26 finalization: dosing names within a drug should be smallest → largest by number ──
+  // ── Rule 7 finalization: dosing names within a drug should be smallest → largest by number ──
   // Only checks drugs whose dosing names are ALL numeric-leading (e.g. "8mg/250ml", "0.1mg/1mL") and
   // sorts by the leading number only. Categorical / weight-band dosings ("STD", "less than 5 kg",
   // "Wt Based: …") are skipped — their order isn't numeric. Rate Mode drugs are ignored.
@@ -1436,6 +1489,8 @@ const RULE_INFO = {
   24: { title: 'Rule 24 — KVO Rate Missing or Out of Range (Rate mode)', severity: 'err' },
   25: { title: 'Rule 25 — KVO Rate Should Be Blank (Off / Continue Primary Rate)', severity: 'warn' },
   26: { title: 'Rule 26 — KVO Rate Out of Range (must be blank or a number 0.4–20 mL/hr)', severity: 'err' },
+  // — Safety / Contraindications (27) —
+  27: { title: 'Rule 27 — Contraindicated Drug Type (blood, chemo, TPN / enteral-parenteral nutrition)', severity: 'err' },
 };
 
 function renderResults(issues) {
@@ -1493,7 +1548,7 @@ function renderResults(issues) {
     const section = document.createElement('div');
     section.className = 'section';
 
-    // Effective severity: if issues carry their own severity (e.g. Rule 20 red/yellow),
+    // Effective severity: if issues carry their own severity (e.g. Rule 15 red/yellow),
     // the header is red when any is an error, else amber.
     let sevForHeader = info.severity;
     if (ruleIssues.length && ruleIssues.some(i => i.severity)) {
@@ -1781,24 +1836,24 @@ function renderResults(issues) {
               ${ruleIssues.map(i => {
                 let issueCell;
                 if (i.r9val !== undefined) {
-                  // Rule 9: show highlighted name with overflow chars marked
+                  // Rule 4: show highlighted name with overflow chars marked
                   issueCell = `<div class="name-field-label">${escHtml(i.r9label)}</div>
                                 <div class="name-display">${buildOverflowHtml(i.r9val)}</div>
                                 <div class="name-pct">▲ ${i.r9pct}% of capacity — red characters won't fit on pump screen</div>`;
                 } else if (i.r14word !== undefined) {
-                  // Rule 14: show drug word with yellow highlights on wrong characters
+                  // Rule 3: show drug word with yellow highlights on wrong characters
                   const wordHtml = buildSpellingHtml(i.r14word, i.r14wrong);
                   const distLabel = i.r14dist === 1 ? '1 letter difference' : `${i.r14dist} letter differences`;
                   issueCell = `<div class="spell-word">${wordHtml}${escHtml(i.r14rest)}</div>
                                <div class="spell-suggest">→ Did you mean <strong>${escHtml(i.r14suggestion)}</strong>? (${distLabel})</div>`;
                 } else if (i.r15pri !== undefined) {
-                  // Rule 15: show both unit values as colored chips
+                  // Rule 18: show both unit values as colored chips
                   const chipA = `<span class="unit-chip ${i.r15pri.isMl ? 'is-ml' : 'non-ml'}">${escHtml(i.r15pri.value)}</span><span class="unit-chip-label">${escHtml(i.r15pri.label)}</span>`;
                   const chipB = `<span class="unit-chip ${i.r15sec.isMl ? 'is-ml' : 'non-ml'}">${escHtml(i.r15sec.value)}</span><span class="unit-chip-label">${escHtml(i.r15sec.label)}</span>`;
                   issueCell = `<div class="unit-chips">${chipA} <span style="color:#9ca3af">vs</span> ${chipB}</div>
                                <div class="unit-compat-note">mL dose units are only compatible with other mL dose units</div>`;
                 } else if (i.r16priUnit !== undefined) {
-                  // Rule 16: show primary unit + each conflicting section as chips
+                  // Rule 19: show primary unit + each conflicting section as chips
                   const priChip = `<span class="unit-chip non-ml">${escHtml(i.r16priUnit)}</span><span class="unit-chip-label">Primary (col I)</span>`;
                   const secChips = i.r16sections.map(s =>
                     `<span style="color:#9ca3af">→</span> <span class="unit-chip non-ml">${escHtml(s.value)}</span><span class="unit-chip-label">${escHtml(s.label)}</span>`
@@ -1806,7 +1861,7 @@ function renderResults(issues) {
                   issueCell = `<div class="unit-chips">${priChip} ${secChips}</div>
                                <div class="unit-compat-note">Bolus and loading infusions are disabled on the pump when Primary Dose Unit is not /min or /hr (columns T–AO must be blank)</div>`;
                 } else if (i.r20) {
-                  // Rule 20: dosing-name concentration vs entered concentration, red or yellow
+                  // Rule 15: dosing-name concentration vs entered concentration, red or yellow
                   const kindClass = i.r20.kind === 'red' ? 'conc-bad' : 'conc-warn';
                   issueCell = `<div class="unit-chips">
                                  <span class="unit-chip-label">Dosing Name (D):</span>
@@ -1816,7 +1871,7 @@ function renderResults(issues) {
                                </div>
                                <div class="unit-compat-note">${escHtml(i.r20.note)}</div>`;
                 } else if (i.r24token !== undefined) {
-                  // Rule 24: show the token with the misspelled characters highlighted + suggestion
+                  // Rule 21: show the token with the misspelled characters highlighted + suggestion
                   const wordHtml = buildSpellingHtml(i.r24token, i.r24wrong);
                   issueCell = `<div class="name-field-label">${escHtml(i.r24label)} = "${escHtml(i.r24raw)}"</div>
                                <div class="spell-word">${wordHtml}</div>
@@ -1897,7 +1952,7 @@ function revealOddWs(str) {
   return out;
 }
 // Renders a string with every space shown as a visible amber dot, so leading / trailing /
-// double spaces (invisible in normal text) are obvious. Used by Rule 25.
+// double spaces (invisible in normal text) are obvious. Used by Rule 2.
 function revealWs(str) {
   const s = String(str);
   const html = escHtml(s).replace(/ /g, '<span class="ws-dot" title="space">·</span>');
@@ -1994,6 +2049,8 @@ const RULE_DESC = {
   24:'When KVO Mode is <code>Rate</code>, the KVO Rate must be filled and between <code>0.4–20 mL/hr</code>.',
   25:'When KVO Mode is <code>Off</code> or <code>Continue Primary Rate</code>, the KVO Rate must be empty.',
   26:'KVO Rate <code>AU</code> must be blank or a number between <code>0.4–20 mL/hr</code>, whatever the KVO Mode. Also catches text entered here.',
+  // — Safety / Contraindications (27) —
+  27:'The MRidium 3870 is <b>not intended</b> for blood or blood products, chemotherapy drugs, drugs affected by UV light, or enteral/parenteral nutritional feeding solutions. Scans the Drug Name and Dosing Name for these (e.g. <code>blood</code>, <code>RBC</code>, <code>TPN</code>, <code>enteral</code>, or known chemo agents) and flags a match to verify. Keyword-based, so confirm each hit — the chemo list can’t cover every agent.',
 };
 (function buildRulesPanel(){
   const body = document.getElementById('rules-body');
