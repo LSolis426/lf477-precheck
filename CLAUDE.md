@@ -216,10 +216,19 @@ entered **smallest number → largest** (e.g. `8mg/250ml` before `16mg/250ml`). 
 `dosingGroups` collection. **Only checks drugs whose dosing names are ALL number-leading** — it extracts
 each dosing's leading number (`/^\s*([\d.,]+)/`) and, if any dosing has no leading number, the drug is
 skipped. This deliberately skips categorical / weight-band dosings (`STD`, `HIGH`, `less than 5 kg`,
-`weight based`, `Wt Based: …`, `Non-Wt: …`) whose order isn't numeric. Sorts by the **leading number
-only** with a stable tiebreak, so same-first-number doses (e.g. `500mg/250mL` vs `500mg/110mL`) keep
-their entered order and aren't falsely flagged. Only column D is checked — column-C (drug) alphabetical
-order is Rule 5's job. Display: side-by-side "As entered" vs "Smallest → largest (recommended)" per
+`weight based`, `Wt Based: …`, `Non-Wt: …`) whose order isn't numeric. Sorts by a **stable tiebreak**,
+so same-magnitude doses (e.g. `500mg/250mL` vs `500mg/110mL`) keep their entered order and aren't falsely
+flagged. Only column D is checked — column-C (drug) alphabetical order is Rule 5's job.
+
+**Unit-aware magnitude (`parseDose` / `UNIT_FAM`).** Comparison is by the leading amount *normalized by its
+unit*, not the raw leading number — so `200mcg/1mL` and `0.2mg/1mL` are recognized as the **same amount**
+(both 200 mcg) and don't flag, and a cross-unit inversion like `1mg` entered before `500mcg` **does** flag
+(1 mg = 1000 mcg > 500 mcg). Normalization runs only when **every** dosing in the drug shares one known
+unit family — mass (`ng`/`mcg`/`mg`/`g`), activity (`units`/`milliunits`), `mEq`, mole (`mmol`/`mol`),
+volume (`mL`); if any dosing's unit is unknown or the families differ, it falls back to the raw leading
+number (original behavior) so incomparable units are never mis-ordered. This fixed a real false positive
+(Lake Regional Nitroglycerin `200mcg` vs `0.2mg`) while leaving all genuine flags intact (e.g. Sutter Alta
+Bates' 10 Max-before-SS drugs still flag). Display: side-by-side "As entered" vs "Smallest → largest (recommended)" per
 flagged drug, moved rows highlighted. Severity: warn. **Calibration:** across ~40 real templates this
 flags ~9% of all-numeric-leading drugs, and spot-checks were all genuine (e.g. `16mg` before `8mg`,
 `32,16,8` → `8,16,32`, `0.5` before `0.1`) — the naive full-sort version was ~57% (mostly false

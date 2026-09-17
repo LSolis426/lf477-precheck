@@ -1435,14 +1435,35 @@ function validate(workbook) {
   // Only checks drugs whose dosing names are ALL numeric-leading (e.g. "8mg/250ml", "0.1mg/1mL") and
   // sorts by the leading number only. Categorical / weight-band dosings ("STD", "less than 5 kg",
   // "Wt Based: …") are skipped — their order isn't numeric. Rate Mode drugs are ignored.
+  // Leading amount + its unit → a normalized magnitude within a unit family, so equivalent doses
+  // written in different units (e.g. "200mcg" and "0.2mg" = 200 mcg) compare as equal. Only used
+  // when every dosing in a drug shares ONE known family; otherwise we fall back to the raw leading
+  // number (unchanged behavior) so we never mis-order across incomparable units.
+  const UNIT_FAM = {
+    ng:['mass',0.001], mcg:['mass',1], µg:['mass',1], μg:['mass',1], ug:['mass',1], microgram:['mass',1], micrograms:['mass',1],
+    mg:['mass',1000], milligram:['mass',1000], milligrams:['mass',1000], g:['mass',1e6], gram:['mass',1e6], grams:['mass',1e6],
+    munit:['act',0.001], munits:['act',0.001], milliunit:['act',0.001], milliunits:['act',0.001], unit:['act',1], units:['act',1],
+    meq:['meq',1], mmol:['mole',1], mol:['mole',1000], ml:['vol',1],
+  };
+  const parseDose = s => {
+    const m = String(s).trim().match(/^([\d.,]+)\s*([a-zµμ]+)?/i);
+    if (!m) return null;
+    const num = parseFloat(m[1].replace(/,/g, ''));
+    if (!isFinite(num)) return null;
+    const fam = UNIT_FAM[(m[2] || '').toLowerCase()];
+    return { num, family: fam ? fam[0] : null, norm: fam ? num * fam[1] : null };
+  };
   for (const [ordKey, entries] of dosingGroups) {
     if (entries.length < 2) continue;
     const [sheet, care, drug] = ordKey.split('|||');
     if (String(drug).trim().toLowerCase().startsWith('rate mode')) continue;
-    const leadNum = s => { const m = String(s).trim().match(/^([\d.,]+)/); return m ? parseFloat(m[1].replace(/,/g, '')) : null; };
-    const nums = entries.map(e => leadNum(e.dosing));
-    if (nums.some(n => n === null || !isFinite(n))) continue; // not all numeric-leading → skip
-    const idx = entries.map((_, i) => i).sort((a, b) => (nums[a] - nums[b]) || (a - b)); // stable ascending by number
+    const parsed = entries.map(e => parseDose(e.dosing));
+    if (parsed.some(p => p === null)) continue; // not all numeric-leading → skip
+    // Compare by normalized magnitude only if every dosing shares one known unit family; else raw number.
+    const fam0 = parsed[0].family;
+    const sameFam = fam0 && parsed.every(p => p.family === fam0);
+    const vals = parsed.map(p => sameFam ? p.norm : p.num);
+    const idx = entries.map((_, i) => i).sort((a, b) => (vals[a] - vals[b]) || (a - b)); // stable ascending by magnitude
     if (idx.every((oi, pos) => oi === pos)) continue; // already smallest → largest
     allIssues.push({
       rule: 7,
