@@ -401,8 +401,9 @@ numeric out of range) or Rule 25 (Off/Continue with any value).
 ## Safety / Contraindications (27)
 
 ### Rule 27 — Contraindicated Drug Type
-Per the MRidium 3870 label, the pump is **not intended for use with blood, blood products, chemotherapy
-drugs, drugs affected by UV light, or enteral/parenteral nutritional feeding solutions.** This rule scans
+Per the MRidium 3870 label (IFU §3 General Warnings), the pump is **not intended for use with blood, blood
+products, chemotherapy drugs, radiological contrast agents, drugs affected by UV light, or enteral/parenteral
+nutritional feeding solutions.** This rule scans
 the **Drug Name (col C)** and **Dosing Name (col D)** for keywords / known agents in those categories and
 flags a match (severity: **error**) with a "verify and remove if it applies" message. The page also shows
 the label's warning box above the drop zone. Three category matchers (`CONTRA_RULES`, word-boundary
@@ -415,6 +416,16 @@ regexes, first match wins, ≤1 flag per category per row):
 - **Chemotherapy / antineoplastic** — `chemo…` plus a curated list of ~50 common cytotoxic agents and
   oncology monoclonal antibodies (cisplatin, doxorubicin, methotrexate, 5-FU, paclitaxel, vincristine,
   rituximab, …).
+- **Radiological contrast agent** — `contrast`, gadolinium agents (`gado…`), iodinated agents (`iohexol`,
+  `iodixanol`, `iopamidol`, `iopromide`, `ioversol`, `diatrizoate`, …), and common brand names (Omnipaque,
+  Visipaque, Isovue, Ultravist, Optiray, Magnevist, Gadavist, Dotarem, ProHance, MultiHance, Eovist,
+  Omniscan, …). Added from IFU §3 ("not intended for radiological contrast agents").
+
+**Not covered — UV-light-sensitive drugs.** The label also contraindicates "drugs affected by UV light,"
+but this is deliberately **not** name-matched: photosensitivity isn't inferable from a name, and the same
+IFU lists nitroprusside (a highly UV-sensitive drug) among the short-half-life drugs the pump is *intended*
+to run — so a UV keyword list would false-flag legitimately-used drugs. The on-page warning still surfaces
+the category for the reviewer.
 
 **Look-alike allow-list (`CONTRA_ALLOW`):** `Plasma-Lyte`/`PlasmaLyte` is a crystalloid maintenance fluid,
 not a plasma blood product, so it is explicitly exempted (otherwise bare `plasma` would flag it).

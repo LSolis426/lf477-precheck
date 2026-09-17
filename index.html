@@ -295,7 +295,7 @@
     <span class="pw-icon" aria-hidden="true">⚠️</span>
     <p><strong>WARNING:</strong> The MRidium 3870 MRI Infusion Pump is not intended for use with blood, blood
     products, chemotherapy drugs, drugs affected by UV light, or enteral/parenteral nutritional feeding
-    solutions. (Rule 27 scans the template for these.)</p>
+    solutions. (Rule 27 scans the template for these, plus radiological contrast agents.)</p>
   </div>
 
   <div id="drop-zone" onclick="document.getElementById('file-input').click()">
@@ -554,6 +554,7 @@ const CONTRA_RULES = [
   { cat: 'blood product', re: /\b(blood|p?rbcs?|packed red(?:\s+blood)?(?:\s+cells?)?|red blood cells?|whole blood|platelets?|fresh frozen plasma|ffp|plasma|plasmanate|cryoprecipitate|cryo|transfus\w*)\b/i },
   { cat: 'enteral / parenteral nutrition solution', re: /\b(tpn|ppn|parenteral nutrition|enteral|tube[\s-]?feed\w*|nutrition\w*|feeding solution|intralipid|smof\w*|fat emulsion|lipid emulsion|aminosyn|travasol|clinimix|trophamine|prosol|plenamine|nephramine)\b/i },
   { cat: 'chemotherapy / antineoplastic drug', re: /\b(chemo\w*|cisplatin|carboplatin|oxaliplatin|doxorubicin|doxil|daunorubicin|epirubicin|idarubicin|cyclophosphamide|ifosfamide|methotrexate|pemetrexed|fluorouracil|5[\s-]?fu|capecitabine|gemcitabine|cytarabine|paclitaxel|docetaxel|cabazitaxel|vincristine|vinblastine|vinorelbine|etoposide|irinotecan|topotecan|bleomycin|mitomycin|mitoxantrone|dacarbazine|temozolomide|bendamustine|bortezomib|carfilzomib|azacitidine|decitabine|fludarabine|melphalan|busulfan|carmustine|lomustine|chlorambucil|dactinomycin|asparaginase|pegaspargase|rituximab|bevacizumab|cetuximab|trastuzumab|pertuzumab|brentuximab|obinutuzumab|blinatumomab|daratumumab|nivolumab|pembrolizumab|ipilimumab|atezolizumab)\b/i },
+  { cat: 'radiological contrast agent', re: /\b(contrast|gado\w*|iohexol|iodixanol|iopamidol|iopromide|ioversol|ioxaglate|ioxilan|iothalamate|iotrolan|iotrolane|metrizamide|diatrizoate|iodinated contrast|omnipaque|visipaque|isovue|ultravist|optiray|magnevist|gadavist|dotarem|prohance|multihance|eovist|omniscan|clariscan)\b/i },
 ];
 // Returns { cat, term } for the first contraindicated category matched in `name`, or null.
 function findContraindication(name) {
@@ -1490,7 +1491,7 @@ const RULE_INFO = {
   25: { title: 'Rule 25 — KVO Rate Should Be Blank (Off / Continue Primary Rate)', severity: 'warn' },
   26: { title: 'Rule 26 — KVO Rate Out of Range (must be blank or a number 0.4–20 mL/hr)', severity: 'err' },
   // — Safety / Contraindications (27) —
-  27: { title: 'Rule 27 — Contraindicated Drug Type (blood, chemo, TPN / enteral-parenteral nutrition)', severity: 'err' },
+  27: { title: 'Rule 27 — Contraindicated Drug Type (blood, chemo, radiological contrast, TPN / enteral-parenteral nutrition)', severity: 'err' },
 };
 
 function renderResults(issues) {
@@ -2050,7 +2051,7 @@ const RULE_DESC = {
   25:'When KVO Mode is <code>Off</code> or <code>Continue Primary Rate</code>, the KVO Rate must be empty.',
   26:'KVO Rate <code>AU</code> must be blank or a number between <code>0.4–20 mL/hr</code>, whatever the KVO Mode. Also catches text entered here.',
   // — Safety / Contraindications (27) —
-  27:'The MRidium 3870 is <b>not intended</b> for blood or blood products, chemotherapy drugs, drugs affected by UV light, or enteral/parenteral nutritional feeding solutions. Scans the Drug Name and Dosing Name for these (e.g. <code>blood</code>, <code>RBC</code>, <code>TPN</code>, <code>enteral</code>, or known chemo agents) and flags a match to verify. Keyword-based, so confirm each hit — the chemo list can’t cover every agent.',
+  27:'The MRidium 3870 is <b>not intended</b> for blood or blood products, chemotherapy drugs, radiological contrast agents, drugs affected by UV light, or enteral/parenteral nutritional feeding solutions. Scans the Drug Name and Dosing Name for these (e.g. <code>blood</code>, <code>RBC</code>, <code>TPN</code>, <code>enteral</code>, <code>gadolinium</code>/<code>iohexol</code>, or known chemo agents) and flags a match to verify. Keyword-based, so confirm each hit — the chemo and contrast lists can’t cover every agent, and UV-light sensitivity isn’t name-detectable (some UV-sensitive drugs, e.g. nitroprusside, are legitimately used on this pump).',
 };
 (function buildRulesPanel(){
   const body = document.getElementById('rules-body');
