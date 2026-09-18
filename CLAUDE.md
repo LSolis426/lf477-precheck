@@ -101,8 +101,8 @@ The tool expects the standard iRadimed LF477 Excel layout:
 > **Grouping.** Rules are numbered in thematic groups so related checks sit next to each other:
 > **Names & Ordering (1–7)**, **Required Fields & Formatting (8–10)**, **Concentration (11–15)**,
 > **Dose Units & Modes (16–21)**, **Limits & Ranges (22–23)**, **KVO (24–26)**, **Safety /
-> Contraindications (27)**. The number is just an identifier — display order in the app and this list
-> both follow it.
+> Contraindications (27)**, **Dose Unit Validity (28)**. The number is just an identifier — display order
+> in the app and this list both follow it.
 
 ## Names & Ordering (1–7)
 
@@ -435,6 +435,21 @@ but this is deliberately **not** name-matched: photosensitivity isn't inferable 
 IFU lists nitroprusside (a highly UV-sensitive drug) among the short-half-life drugs the pump is *intended*
 to run — so a UV keyword list would false-flag legitimately-used drugs. The on-page warning still surfaces
 the category for the reviewer.
+
+## Dose Unit Validity (28)
+
+### Rule 28 — Unsupported Time Unit in Dose Rate
+The MRidium 3870 can only program **per-minute** or **per-hour** infusion rates (confirmed with the user,
+2026-09). This rule flags a Primary / Bolus / Loading Dose Unit (cols **I / T / AE**) whose time
+denominator — the last `/`-separated segment — is any *other* time unit: per **day**, **second**, **week**,
+**month**, or **year** and their common abbreviations (`day`/`d`, `sec`/`s`, `wk`/`week`/`w`, `mo`/`month`,
+`yr`/`year`). Severity: **error** (the pump literally can't run it). Implementation mirrors Rule 20's
+column loop (`minCheckCols`): lowercase the last segment and test it against `BAD_TIME_DENOM`. Non-rate
+units are untouched because their last segment isn't a time word — `mg`, `mL`, `mEq`, `gram`, and
+weight-normalized amounts like `mg/kg` (last segment `kg`) all pass. Valid `…/min` and `…/hr` pass because
+`min`/`hr` aren't in the bad set. **Calibration:** across 174 real templates it flags **0** (no site uses a
+per-day/second/week unit today) with 0 false positives; synthetic `mg/day`, `mcg/kg/sec`, `units/week`,
+`mg/d` all flag correctly.
 
 **Look-alike allow-list (`CONTRA_ALLOW`):** `Plasma-Lyte`/`PlasmaLyte` is a crystalloid maintenance fluid,
 not a plasma blood product, so it is explicitly exempted (otherwise bare `plasma` would flag it).

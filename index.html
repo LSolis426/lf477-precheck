@@ -1210,6 +1210,25 @@ function validate(workbook) {
         }
       }
 
+      // ── Rule 28: Unsupported time unit in a dose rate (pump only programs /min or /hr) ──
+      // The 3870 can only run per-minute or per-hour rates. Flag a dose unit whose time
+      // denominator (the last "/"-segment) is a different time unit — per day / second / week / etc.
+      // Leaves /min, /hr and non-rate units (mg, mL, mg/kg, mEq, …) alone.
+      const BAD_TIME_DENOM = new Set([
+        'day','days','dy','d','sec','secs','second','seconds','s',
+        'week','weeks','wk','wks','w','month','months','mo','mon','year','years','yr','yrs','annum',
+      ]);
+      for (const { idx, label } of minCheckCols) {
+        const u = row[idx];
+        if (isEmpty(u)) continue;
+        const lastSeg = String(u).split('/').pop().trim();
+        if (BAD_TIME_DENOM.has(lastSeg.toLowerCase())) {
+          allIssues.push({ rule: 28, ...loc,
+            msg: `${label} = "${u}" — the pump can only program per-minute or per-hour rates. "${lastSeg}" is not a supported time unit; use ".../min" or ".../hr".`
+          });
+        }
+      }
+
       // ── Rule 21: Likely misspelling of "unit"/"units" ──
       // "unit"/"units" appear as concentration/dose units (heparin, insulin, vasopressin, …).
       // Catch near-miss typos like "uniit" (should be "unit"). Checks the Conc Unit (col E), the
@@ -1513,6 +1532,8 @@ const RULE_INFO = {
   26: { title: 'Rule 26 — KVO Rate Out of Range (must be blank or a number 0.4–20 mL/hr)', severity: 'err' },
   // — Safety / Contraindications (27) —
   27: { title: 'Rule 27 — Contraindicated Drug Type (blood, chemo, radiological contrast, TPN / enteral-parenteral nutrition)', severity: 'err' },
+  // — Dose Unit Validity (28) —
+  28: { title: 'Rule 28 — Unsupported Time Unit in Dose Rate (pump allows only /min or /hr)', severity: 'err' },
 };
 
 function renderResults(issues) {
@@ -2073,6 +2094,8 @@ const RULE_DESC = {
   26:'KVO Rate <code>AU</code> must be blank or a number between <code>0.4–20 mL/hr</code>, whatever the KVO Mode. Also catches text entered here.',
   // — Safety / Contraindications (27) —
   27:'The MRidium 3870 is <b>not intended</b> for blood or blood products, chemotherapy drugs, radiological contrast agents, drugs affected by UV light, or enteral/parenteral nutritional feeding solutions. Scans the Drug Name and Dosing Name for these (e.g. <code>blood</code>, <code>RBC</code>, <code>TPN</code>, <code>enteral</code>, <code>gadolinium</code>/<code>iohexol</code>, or known chemo agents) and flags a match to verify. Keyword-based, so confirm each hit — the chemo and contrast lists can’t cover every agent, and UV-light sensitivity isn’t name-detectable (some UV-sensitive drugs, e.g. nitroprusside, are legitimately used on this pump).',
+  // — Dose Unit Validity (28) —
+  28:'The pump can only program per-minute or per-hour infusion rates. Flags any Primary, Bolus, or Loading Dose Unit (cols <code>I</code>/<code>T</code>/<code>AE</code>) whose time denominator is something else — e.g. <code>mg/day</code>, <code>mcg/kg/sec</code>, or <code>units/week</code>. Use <code>…/min</code> or <code>…/hr</code>. Non-rate units (<code>mg</code>, <code>mL</code>, <code>mg/kg</code>, <code>mEq</code>) are left alone.',
 };
 (function buildRulesPanel(){
   const body = document.getElementById('rules-body');
