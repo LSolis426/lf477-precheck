@@ -307,8 +307,11 @@ Two outcomes, shown with colored chips in the Issue cell:
   concentration is the same** (e.g. name `1 mg / 1 mL` vs entered `100 mg / 100 mL`, both
   1 mg/mL). Flagged as "likely intentional — verify," not a hard error.
 
-Rows are skipped when the dosing name isn't a concentration expression (e.g. `"mL/hr"`), or
-when nothing is entered in E–H. This rule carries a per-issue `severity` (`err`/`warn`) rather
+Units are compared through `normUnit()`, which folds singular/plural, synonyms, and case
+(`units` == `unit`, `microgram` == `mcg`, `mL` == `ml`) — so `0.2 units / 1 mL` vs entered
+`20 unit / 100 mL` is recognized as the same 0.2 units/mL and flagged **yellow**, not red. A real
+unit mismatch (e.g. `mcg` vs `mg`) still fails `unitOk` and shows **red**. Rows are skipped when the
+dosing name isn't a concentration expression (e.g. `"mL/hr"`), or when nothing is entered in E–H. This rule carries a per-issue `severity` (`err`/`warn`) rather
 than a fixed rule severity; the summary counts and section-header color honor it (see
 `i.severity || RULE_INFO[i.rule].severity` in `renderResults`). Verified against
 `MultiCare Corporate 3870 DERS 06.30.26.xlsx`: correctly flags PEDIATRIC row 8 (dexmedeTOMidine,

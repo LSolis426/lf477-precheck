@@ -526,6 +526,28 @@ const VALID_UNIT_WORDS = new Set([
   'mcg','mg','g','ng','kg','ml','l','unit','units','milliunit','milliunits','munit','munits','mu','mus','meq','mmol','mol',
   'min','mins','minute','minutes','hr','hrs','hour','hours','h','m','kcal','microgram','milligram','nanogram',
 ]);
+
+// Fold a unit to a canonical form so equivalent spellings compare equal — singular/plural
+// ("unit" == "units"), synonyms ("microgram" == "mcg"), and case ("mL" == "ml"). Used by Rule 15's
+// concentration comparison so e.g. "0.2 units / 1 mL" and "20 unit / 100 mL" aren't treated as a
+// unit mismatch. Falls back to stripping a trailing plural "s" for anything not in the synonym map.
+const UNIT_SYNONYMS = {
+  microgram:'mcg', micrograms:'mcg', mcg:'mcg', ug:'mcg', mcgs:'mcg',
+  milligram:'mg', milligrams:'mg', mg:'mg', mgs:'mg',
+  gram:'g', grams:'g', g:'g', gm:'g', gms:'g',
+  nanogram:'ng', nanograms:'ng', ng:'ng',
+  unit:'unit', units:'unit', u:'unit',
+  milliunit:'milliunit', milliunits:'milliunit', munit:'milliunit', munits:'milliunit', mu:'milliunit', mus:'milliunit',
+  milliliter:'ml', milliliters:'ml', millilitre:'ml', millilitres:'ml', ml:'ml', mls:'ml', cc:'ml',
+  liter:'l', liters:'l', litre:'l', litres:'l', l:'l',
+  meq:'meq', meqs:'meq', mmol:'mmol', mmols:'mmol', mol:'mol', mols:'mol', mole:'mol', moles:'mol',
+};
+function normUnit(u) {
+  const s = String(u == null ? '' : u).trim().toLowerCase();
+  if (!s) return '';
+  if (UNIT_SYNONYMS[s]) return UNIT_SYNONYMS[s];
+  return (s.length > 1 && s.endsWith('s')) ? s.slice(0, -1) : s; // fallback: drop plural "s"
+}
 // Returns true if `tok` (lowercase) looks like a typo of "unit"/"units" — one edit away, or a
 // transposition (same letters, different order). Valid unit words are never flagged.
 function looksLikeUnitWord(tok) {
@@ -1120,9 +1142,9 @@ function validate(workbook) {
         if (isEmpty(cAmtRaw) && isEmpty(cDilRaw) && isEmpty(cUnit) && isEmpty(cDilUnit)) return; // nothing entered — skip
 
         const cAmt = toNum(cAmtRaw), cDil = toNum(cDilRaw);
-        const eqStr = (a,b) => String(a==null?'':a).trim().toLowerCase() === String(b==null?'':b).trim().toLowerCase();
+        const unitEq = (a,b) => normUnit(a) === normUnit(b); // fold singular/plural + synonyms (units == unit)
         // Units are consistent unless a present col unit contradicts the name (blank col unit is tolerated)
-        const unitOk = (isEmpty(cUnit) || eqStr(nUnit, cUnit)) && (isEmpty(cDilUnit) || eqStr(nDilUnit, cDilUnit));
+        const unitOk = (isEmpty(cUnit) || unitEq(nUnit, cUnit)) && (isEmpty(cDilUnit) || unitEq(nDilUnit, cDilUnit));
         const amountsEqual = isFinite(cAmt) && isFinite(cDil) && cAmt === nAmt && cDil === nDil;
         if (amountsEqual && unitOk) return; // full match — nothing to flag
 
