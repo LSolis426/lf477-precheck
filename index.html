@@ -650,11 +650,26 @@ function validate(workbook) {
 
   for (const sheetName of workbook.SheetNames) {
     const ws = workbook.Sheets[sheetName];
-    const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
 
     // Detect if Quick Recall column (AV = index 47) exists on this sheet
     const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
     const hasQuickRecall = range.e.c >= 47;
+
+    // Guard against inflated sheet ranges. Some templates carry stray formatting (or an errant far-down
+    // cell) that stretches a sheet's used range to Excel's maximum (1,048,576 rows). Scanning that many
+    // rows blocks the main thread for a minute-plus and freezes the browser tab, so bound the parse to
+    // the last row that actually holds a value (cells with only formatting have no `.v`).
+    let lastDataRow = 0;
+    for (const addr in ws) {
+      if (addr[0] === '!') continue;
+      const cell = ws[addr];
+      if (cell && cell.v !== undefined && cell.v !== null && cell.v !== '') {
+        const r = XLSX.utils.decode_cell(addr).r;
+        if (r > lastDataRow) lastDataRow = r;
+      }
+    }
+    const readRange = { s: { r: 0, c: 0 }, e: { r: Math.min(range.e.r, lastDataRow), c: range.e.c } };
+    const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true, range: readRange });
 
     // Sheets where every drug entry is a "Rate Mode" placeholder (e.g. a BASIC care area) don't get
     // the drug-library checks (concentration, limits, spelling, …). But a few still apply: KVO Mode
