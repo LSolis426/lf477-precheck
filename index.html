@@ -548,6 +548,14 @@ function normUnit(u) {
   if (UNIT_SYNONYMS[s]) return UNIT_SYNONYMS[s];
   return (s.length > 1 && s.endsWith('s')) ? s.slice(0, -1) : s; // fallback: drop plural "s"
 }
+
+// Hidden / invisible characters that should never appear in a template cell (Rule 29). Any other
+// control character (code point < 32) is also flagged generically as "control character".
+const HIDDEN_CHARS = {
+  9: 'tab', 10: 'line feed (newline)', 11: 'vertical tab', 12: 'form feed', 13: 'carriage return',
+  160: 'non-breaking space', 173: 'soft hyphen', 8203: 'zero-width space', 8204: 'zero-width non-joiner',
+  8205: 'zero-width joiner', 8239: 'narrow no-break space', 8288: 'word joiner', 65279: 'zero-width no-break space (BOM)',
+};
 // Returns true if `tok` (lowercase) looks like a typo of "unit"/"units" — one edit away, or a
 // transposition (same letters, different order). Valid unit words are never flagged.
 function looksLikeUnitWord(tok) {
@@ -692,6 +700,39 @@ function validate(workbook) {
     }
     const readRange = { s: { r: 0, c: 0 }, e: { r: Math.min(range.e.r, lastDataRow), c: range.e.c } };
     const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true, range: readRange });
+
+    // ── Rule 29: Hidden control / invisible characters in a data cell ──
+    // Catches a cell containing a carriage return, line feed, tab, or other non-printable / invisible
+    // character (e.g. a stray Alt+Enter line break, a non-breaking or zero-width space). These display
+    // incorrectly and can store a number as text, yet slip past every other check (JS trims whitespace
+    // when reading numbers), so they must be flagged explicitly. Scans every drug-entry row (Excel row
+    // 4+, i.e. data index ≥ 3) across all columns; header rows are not checked.
+    {
+      let caFill29 = null;
+      for (let ri = 3; ri < data.length; ri++) {
+        const r29 = data[ri] || [];
+        if (!isEmpty(r29[C.CARE_AREA])) caFill29 = r29[C.CARE_AREA];
+        for (let ci = 0; ci < r29.length; ci++) {
+          const v = r29[ci];
+          if (typeof v !== 'string' || v === '') continue;
+          const found = [];
+          for (const ch of v) {
+            const cp = ch.codePointAt(0);
+            const nm = HIDDEN_CHARS[cp] || (cp < 32 ? 'control character' : null);
+            if (nm && !found.some(f => f.cp === cp)) found.push({ cp, nm });
+          }
+          if (found.length) {
+            const addr = XLSX.utils.encode_col(ci) + (ri + 1);
+            const list = found.map(f => `${f.nm} (U+${f.cp.toString(16).toUpperCase().padStart(4, '0')})`).join(', ');
+            allIssues.push({
+              rule: 29, sheet: sheetName, row: ri + 1, care: caFill29,
+              drug: r29[C.DRUG_NAME], dosing: r29[C.DOSING_NAME],
+              msg: `Cell ${addr} contains ${found.length > 1 ? 'hidden characters' : 'a hidden character'}: ${list}. Remove it — the cell displays incorrectly and a number here is stored as text.`
+            });
+          }
+        }
+      }
+    }
 
     // Sheets where every drug entry is a "Rate Mode" placeholder (e.g. a BASIC care area) don't get
     // the drug-library checks (concentration, limits, spelling, …). But a few still apply: KVO Mode
@@ -1571,6 +1612,8 @@ const RULE_INFO = {
   27: { title: 'Rule 27 — Contraindicated Drug Type (blood, chemo, radiological contrast, TPN / enteral-parenteral nutrition)', severity: 'err' },
   // — Dose Unit Validity (28) —
   28: { title: 'Rule 28 — Unsupported Time Unit in Dose Rate (pump allows only /min or /hr)', severity: 'err' },
+  // — Cell Integrity (29) —
+  29: { title: 'Rule 29 — Hidden Control / Invisible Character in a Cell (line break, tab, non-breaking/zero-width space)', severity: 'err' },
 };
 
 function renderResults(issues) {
@@ -2133,6 +2176,8 @@ const RULE_DESC = {
   27:'The MRidium 3870 is <b>not intended</b> for blood or blood products, chemotherapy drugs, radiological contrast agents, drugs affected by UV light, or enteral/parenteral nutritional feeding solutions. Scans the Drug Name and Dosing Name for these (e.g. <code>blood</code>, <code>RBC</code>, <code>TPN</code>, <code>enteral</code>, <code>gadolinium</code>/<code>iohexol</code>, or known chemo agents) and flags a match to verify. Keyword-based, so confirm each hit — the chemo and contrast lists can’t cover every agent, and UV-light sensitivity isn’t name-detectable (some UV-sensitive drugs, e.g. nitroprusside, are legitimately used on this pump).',
   // — Dose Unit Validity (28) —
   28:'The pump can only program per-minute or per-hour infusion rates. Flags any Primary, Bolus, or Loading Dose Unit (cols <code>I</code>/<code>T</code>/<code>AE</code>) whose time denominator is something else — e.g. <code>mg/day</code>, <code>mcg/kg/sec</code>, or <code>units/week</code>. Use <code>…/min</code> or <code>…/hr</code>. Non-rate units (<code>mg</code>, <code>mL</code>, <code>mg/kg</code>, <code>mEq</code>) are left alone.',
+  // — Cell Integrity (29) —
+  29:'Flags any drug-entry cell that hides a control or invisible character — a carriage return or line feed (a stray <b>Alt+Enter</b> line break), a tab, or a non-breaking / zero-width space. These make the cell display wrong (the value jumps to a second line) and silently store a <i>number as text</i>, so they slip past the other checks. The message names the exact cell (e.g. <code>D24</code>) and which character. Fix in Excel: delete the hidden character or retype the cell. Header rows are not checked.',
 };
 (function buildRulesPanel(){
   const body = document.getElementById('rules-body');

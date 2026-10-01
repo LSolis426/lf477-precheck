@@ -101,8 +101,8 @@ The tool expects the standard iRadimed LF477 Excel layout:
 > **Grouping.** Rules are numbered in thematic groups so related checks sit next to each other:
 > **Names & Ordering (1–7)**, **Required Fields & Formatting (8–10)**, **Concentration (11–15)**,
 > **Dose Units & Modes (16–21)**, **Limits & Ranges (22–23)**, **KVO (24–26)**, **Safety /
-> Contraindications (27)**, **Dose Unit Validity (28)**. The number is just an identifier — display order
-> in the app and this list both follow it.
+> Contraindications (27)**, **Dose Unit Validity (28)**, **Cell Integrity (29)**. The number is just an
+> identifier — display order in the app and this list both follow it.
 
 ## Names & Ordering (1–7)
 
@@ -453,6 +453,29 @@ weight-normalized amounts like `mg/kg` (last segment `kg`) all pass. Valid `…/
 `min`/`hr` aren't in the bad set. **Calibration:** across 174 real templates it flags **0** (no site uses a
 per-day/second/week unit today) with 0 false positives; synthetic `mg/day`, `mcg/kg/sec`, `units/week`,
 `mg/d` all flag correctly.
+
+## Cell Integrity (29)
+
+### Rule 29 — Hidden Control / Invisible Character in a Cell
+Flags any **drug-entry cell** (Excel row 4+) that contains a hidden control or invisible character:
+carriage return / line feed (a stray **Alt+Enter** line break), tab, vertical tab, form feed, and the
+invisible-space family — non-breaking space (U+00A0), zero-width space/joiner/non-joiner, narrow no-break
+space, word joiner, soft hyphen, BOM/zero-width no-break space. Any other control char (code point < 32)
+is caught generically. Severity: **error**. Runs as its own pass over `data` right after the sheet is
+parsed (before the Rate-Mode branch), so it covers every sheet including Rate-Mode-only ones. Header rows
+(1–3) are skipped so legitimate label formatting (double spaces in the column headers) isn't flagged. The
+message names the exact cell and each character with its code point (e.g. `Cell D24 contains hidden
+characters: carriage return (U+000D), line feed (U+000A)…`).
+
+**Why it exists.** These characters display wrong (the value jumps to a second line inside the cell) and,
+critically, make a numeric cell store as **text** — but they slip past every numeric check because
+`Number("\r\n500")` is `500` (JS trims whitespace). So a malformed cell looked valid to the tool. Found on
+`OH 3870 DERS Template 3 Care Areas.xlsx` (Orlando Health): cells `M15/N15/M19/N19/M22/D24/H24/M28/N28/M37/N37/N38`
+each had a leading `\r\n`, and the tool previously reported **0 issues** on that file. **Calibration:** flags
+exactly those 12 cells on the Orlando file; across the 186-file REVISIONS library it flags **0** (no stray
+control chars) with 0 false positives. Note: ordinary leading/trailing/double *spaces* (U+0020) are NOT
+covered here — those are deliberate sort keys in some dosing names and are surfaced by Rules 2/5/6's
+whitespace reveals instead.
 
 **Look-alike allow-list (`CONTRA_ALLOW`):** `Plasma-Lyte`/`PlasmaLyte` is a crystalloid maintenance fluid,
 not a plasma blood product, so it is explicitly exempted (otherwise bare `plasma` would flag it).
