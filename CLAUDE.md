@@ -467,6 +467,12 @@ parsed (before the Rate-Mode branch), so it covers every sheet including Rate-Mo
 message names the exact cell and each character with its code point (e.g. `Cell D24 contains hidden
 characters: carriage return (U+000D), line feed (U+000A)…`).
 
+**Visual rendering.** Rule 29 has a special Issue-cell render (`hiddenReveal()` + the `i.r29` field) that
+shows the cell's value in monospace with each hidden character drawn as a red inline badge
+(`CR`, `LF`, `TAB`, `NBSP`, `ZWSP`, …) **at its actual position**, so you can see where it sits relative to
+the name — e.g. `[CR][LF]200mg/40mL` makes the leading line break obvious. The row's Drug/Dosing columns
+give the name context. `HIDDEN_ABBR` holds the font-safe badge labels.
+
 **Why it exists.** These characters display wrong (the value jumps to a second line inside the cell) and,
 critically, make a numeric cell store as **text** — but they slip past every numeric check because
 `Number("\r\n500")` is `500` (JS trims whitespace). So a malformed cell looked valid to the tool. Found on
