@@ -12,6 +12,7 @@
 
   header { background: #2563eb; color: white; padding: 16px 32px; display: flex; align-items: center; gap: 12px; }
   header h1 { font-size: 18px; font-weight: 600; }
+  header .brand-icon { display: flex; align-items: center; }
   header span { font-size: 13px; opacity: 0.6; }
 
   .container { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
@@ -253,9 +254,8 @@
 <body>
 
 <header>
-  <div>🩺</div>
+  <div class="brand-icon" aria-hidden="true"><svg viewBox="0 0 32 32" width="30" height="30"><circle cx="16" cy="16" r="15" fill="#dbeafe"/><path d="M8 16.5 L14 22.5 L24 10" fill="none" stroke="#2563eb" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
   <h1>3870 LF477 Template Pre-Check</h1>
-  <span>Pre-Check Templates from Pharmacist</span>
   <button id="rules-btn" class="rules-btn" type="button" aria-haspopup="dialog">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
     Rules reference
