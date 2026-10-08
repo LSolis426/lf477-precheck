@@ -882,10 +882,11 @@ function validate(workbook) {
           [C.DIL_UNIT,  'G (Diluent Unit)'],
           [C.DIL_AMT,   'H (Diluent Amount)'],
         ];
-        for (const [idx, label] of mCheck) {
-          if (!isEmpty(row[idx])) {
-            allIssues.push({ rule: 11, ...loc, msg: `Primary Dose Unit is mL-based ("${row[C.PRI_UNIT]}") — col ${label} must be blank but has value "${row[idx]}"` });
-          }
+        const filled = mCheck.filter(([idx]) => !isEmpty(row[idx]));
+        if (filled.length) {
+          const vals = filled.map(([idx, label]) => `${label} = "${String(row[idx]).trim()}"`).join(', ');
+          allIssues.push({ rule: 11, ...loc,
+            msg: `Primary Dose Unit is mL-based ("${row[C.PRI_UNIT]}") — concentration columns E–H must all be blank, but ${filled.length > 1 ? 'these have values' : 'this has a value'}: ${vals}.` });
         }
       }
 

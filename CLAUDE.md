@@ -269,7 +269,7 @@ column is simply unused) and is not flagged. This catches e.g. milrinone with Pr
 ## Concentration (11–15)
 
 ### Rule 11 — mL-based Unit with Concentration Data
-If Primary Dose Unit (col I) is mL-based (`mL`, `mL/hr`, `mL/min`, etc.), columns E–H must be blank. Flags each non-blank concentration field individually.
+If Primary Dose Unit (col I) is mL-based (`mL`, `mL/hr`, `mL/min`, etc.), columns E–H must be blank. Reports **one issue per drug row** that lists every non-blank concentration column and its value (e.g. `concentration columns E–H must all be blank, but these have values: E (Conc Unit) = "mg", F (Conc Amount) = "30", …`) rather than a separate row per column.
 
 ### Rule 12 — Conc Unit Filled Without Numeric Concentration Values
 If Conc Amount (F) and Diluent Amount (H) are both blank, Conc Unit (E) must also be blank. When a pharmacist intends a wildcard concentration (any concentration allowed), all three fields should be empty. A unit in E with no numbers in F/H is an incomplete entry.
