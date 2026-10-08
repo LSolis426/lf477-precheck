@@ -764,10 +764,30 @@ function validate(workbook) {
       }
     }
 
+    // Count of drug entries per care area (care fills down), so a lone "Rate Mode" placeholder can be
+    // exempted from the KVO Mode / Quick Recall requirement when it's the ONLY entry in its care area
+    // (a basic-mode-only care area with no drugs below it — those don't need KVO Mode / Quick Recall).
+    const drugCountByCare = new Map();
+    {
+      let caF = null;
+      for (let ri = 3; ri < data.length; ri++) {
+        const row = data[ri] || [];
+        if (!isEmpty(row[C.CARE_AREA])) caF = row[C.CARE_AREA];
+        if (isEmpty(row[C.DRUG_NAME])) continue;
+        const key = String(caF || '').trim().toLowerCase();
+        drugCountByCare.set(key, (drugCountByCare.get(key) || 0) + 1);
+      }
+    }
+    const isRateMode = v => String(v || '').trim().toLowerCase().startsWith('rate mode');
+    // A "Rate Mode" entry that is the only drug entry in its care area — skip its KVO/Quick Recall checks.
+    const rateModeSolo = (drugName, careVal) =>
+      isRateMode(drugName) && drugCountByCare.get(String(careVal || '').trim().toLowerCase()) === 1;
+
     // Sheets where every drug entry is a "Rate Mode" placeholder (e.g. a BASIC care area) don't get
     // the drug-library checks (concentration, limits, spelling, …). But a few still apply: KVO Mode
-    // (col AT) and Quick Recall (col AV) are required (Rule 8), and these entries still form the pump's
-    // drug list, which it alphabetizes — so the display-order checks (Rules 6 & 5) run too.
+    // (col AT) and Quick Recall (col AV) are required (Rule 8) unless the Rate Mode entry is alone in
+    // its care area, and these entries still form the pump's drug list, which it alphabetizes — so the
+    // display-order checks (Rules 6 & 5) run too.
     const rowsWithDrug = data.slice(3).filter(r => r && !r.every(isEmpty) && !isEmpty(r[C.DRUG_NAME]));
     if (rowsWithDrug.length > 0 &&
         rowsWithDrug.every(r => String(r[C.DRUG_NAME]).trim().toLowerCase().startsWith('rate mode'))) {
@@ -778,10 +798,13 @@ function validate(workbook) {
         if (isEmpty(row[C.DRUG_NAME])) continue;
         const care = caFill;
         const loc = { sheet: sheetName, row: ri + 1, care, drug: row[C.DRUG_NAME], dosing: row[C.DOSING_NAME] };
-        // Rule 8 — required fields still apply to Rate Mode entries
-        if (isEmpty(row[C.KVO_MODE])) allIssues.push({ rule: 8, ...loc, msg: 'KVO Mode (col AT) is empty' });
-        if (hasQuickRecall && isEmpty(row[C.QUICK_RCL])) {
-          allIssues.push({ rule: 8, ...loc, msg: 'Quick Recall (col AV) is empty — required when this column is present' });
+        // Rule 8 — KVO Mode / Quick Recall required for Rate Mode entries, unless this entry is the
+        // only drug in its care area (a basic-mode-only care area needs neither).
+        if (!rateModeSolo(row[C.DRUG_NAME], care)) {
+          if (isEmpty(row[C.KVO_MODE])) allIssues.push({ rule: 8, ...loc, msg: 'KVO Mode (col AT) is empty' });
+          if (hasQuickRecall && isEmpty(row[C.QUICK_RCL])) {
+            allIssues.push({ rule: 8, ...loc, msg: 'Quick Recall (col AV) is empty — required when this column is present' });
+          }
         }
         // Rules 6 & 5 — feed the pump display-order checks (drug list gets alphabetized).
         const ordKey = `${sheetName}|||${String(care||'').trim()}|||${String(row[C.DRUG_NAME]||'').trim()}`;
@@ -890,9 +913,13 @@ function validate(workbook) {
         if (isEmpty(drugName))   allIssues.push({ rule: 8, ...loc, msg: 'Drug Name (col C) is empty' });
         if (isEmpty(dosingName)) allIssues.push({ rule: 8, ...loc, msg: 'Dosing Name (col D) is empty' });
         if (isEmpty(row[C.PRI_UNIT]))  allIssues.push({ rule: 8, ...loc, msg: 'Primary Dose Unit (col I) is empty' });
-        if (isEmpty(row[C.KVO_MODE])) allIssues.push({ rule: 8, ...loc, msg: 'KVO Mode (col AT) is empty' });
-        if (hasQuickRecall && isEmpty(row[C.QUICK_RCL])) {
-          allIssues.push({ rule: 8, ...loc, msg: 'Quick Recall (col AV) is empty — required when this column is present' });
+        // KVO Mode / Quick Recall: required, except for a lone "Rate Mode" entry that is the only drug
+        // in its care area (a basic-mode-only care area needs neither).
+        if (!rateModeSolo(drugName, careArea)) {
+          if (isEmpty(row[C.KVO_MODE])) allIssues.push({ rule: 8, ...loc, msg: 'KVO Mode (col AT) is empty' });
+          if (hasQuickRecall && isEmpty(row[C.QUICK_RCL])) {
+            allIssues.push({ rule: 8, ...loc, msg: 'Quick Recall (col AV) is empty — required when this column is present' });
+          }
         }
       }
 
