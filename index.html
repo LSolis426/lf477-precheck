@@ -808,6 +808,23 @@ function validate(workbook) {
 
       const loc = { sheet: sheetName, row: excelRow, care: careArea, drug: drugName, dosing: dosingName };
 
+      // ── Rule 30: Trailing space on an identity name (cols B / C / D) ──
+      // A trailing space is invisible and virtually never intentional — leading spaces are used to
+      // control pump sort order, but trailing ones serve no purpose, yet the pump keeps them, so the
+      // same name with a stray trailing space becomes a separate entry. Flag each of Care Area / Drug /
+      // Dosing that ends in an ordinary space. Leading and internal spaces are left alone; trailing
+      // tabs / non-breaking / zero-width spaces are caught by Rule 29 instead.
+      for (const [cidx, clabel] of [[C.CARE_AREA, 'Care Area (col B)'], [C.DRUG_NAME, 'Drug Name (col C)'], [C.DOSING_NAME, 'Dosing Name (col D)']]) {
+        const val = row[cidx];
+        if (typeof val === 'string' && / $/.test(val)) {
+          const trimmed = val.replace(/ +$/, '');
+          const n = val.length - trimmed.length;
+          allIssues.push({ rule: 30, ...loc,
+            r30: { label: clabel, trimmed, n },
+            msg: `${clabel} "${trimmed}" has ${n} trailing space${n > 1 ? 's' : ''} — remove it; the pump treats a trailing space as a different entry.` });
+        }
+      }
+
       // ── Rule 1: Collect all rows per care-area + drug + dosing key ───────
       // Skip rows where BOTH Drug Name and Dosing Name are blank — those are empty template
       // rows (not real drug entries), so a shared empty key isn't a meaningful duplicate.
@@ -1638,8 +1655,9 @@ const RULE_INFO = {
   27: { title: 'Rule 27 — Contraindicated Drug Type (blood, chemo, radiological contrast, TPN / enteral-parenteral nutrition)', severity: 'err' },
   // — Dose Unit Validity (28) —
   28: { title: 'Rule 28 — Unsupported Time Unit in Dose Rate (pump allows only /min or /hr)', severity: 'err' },
-  // — Cell Integrity (29) —
+  // — Cell Integrity (29–30) —
   29: { title: 'Rule 29 — Hidden Control / Invisible Character in a Cell (line break, tab, non-breaking/zero-width space)', severity: 'err' },
+  30: { title: 'Rule 30 — Trailing Space in Care Area / Drug / Dosing Name (cols B / C / D)', severity: 'warn' },
 };
 
 function renderResults(issues) {
@@ -2031,6 +2049,12 @@ function renderResults(issues) {
                   issueCell = `<div class="name-field-label">Cell ${escHtml(i.r29.addr)} — hidden ${i.r29.chars.length > 1 ? 'characters' : 'character'}</div>
                                <div class="name-display">${hiddenReveal(i.r29.value)}</div>
                                <div class="rule-note">⚠ ${escHtml(names)} — remove it; the cell displays incorrectly and a number here is stored as text.</div>`;
+                } else if (i.r30 !== undefined) {
+                  // Rule 30: show the name with the trailing space(s) revealed as highlighted dots
+                  const dots = Array(i.r30.n).fill('<span class="ws-dot" title="trailing space">·</span>').join('');
+                  issueCell = `<div class="name-field-label">${escHtml(i.r30.label)}</div>
+                               <div class="name-display">${escHtml(i.r30.trimmed)}${dots}</div>
+                               <div class="rule-note">⚠ ${i.r30.n} trailing space${i.r30.n > 1 ? 's' : ''} — remove it; the pump treats a trailing space as a separate entry from the same name without it.</div>`;
                 } else {
                   issueCell = `<span class="msg-col">${escHtml(i.msg)}</span>`;
                 }
@@ -2208,8 +2232,9 @@ const RULE_DESC = {
   27:'The MRidium 3870 is <b>not intended</b> for blood or blood products, chemotherapy drugs, radiological contrast agents, drugs affected by UV light, or enteral/parenteral nutritional feeding solutions. Scans the Drug Name and Dosing Name for these (e.g. <code>blood</code>, <code>RBC</code>, <code>TPN</code>, <code>enteral</code>, <code>gadolinium</code>/<code>iohexol</code>, or known chemo agents) and flags a match to verify. Keyword-based, so confirm each hit — the chemo and contrast lists can’t cover every agent, and UV-light sensitivity isn’t name-detectable (some UV-sensitive drugs, e.g. nitroprusside, are legitimately used on this pump).',
   // — Dose Unit Validity (28) —
   28:'The pump can only program per-minute or per-hour infusion rates. Flags any Primary, Bolus, or Loading Dose Unit (cols <code>I</code>/<code>T</code>/<code>AE</code>) whose time denominator is something else — e.g. <code>mg/day</code>, <code>mcg/kg/sec</code>, or <code>units/week</code>. Use <code>…/min</code> or <code>…/hr</code>. Non-rate units (<code>mg</code>, <code>mL</code>, <code>mg/kg</code>, <code>mEq</code>) are left alone.',
-  // — Cell Integrity (29) —
+  // — Cell Integrity (29–30) —
   29:'Flags any drug-entry cell that hides a control or invisible character — a carriage return or line feed (a stray <b>Alt+Enter</b> line break), a tab, or a non-breaking / zero-width space. These make the cell display wrong (the value jumps to a second line) and silently store a <i>number as text</i>, so they slip past the other checks. The message names the exact cell (e.g. <code>D24</code>) and which character. Fix in Excel: delete the hidden character or retype the cell. Header rows are not checked.',
+  30:'A Care Area, Drug Name, or Dosing Name (cols <code>B</code>/<code>C</code>/<code>D</code>) ends in a <b>trailing space</b>. Trailing spaces are invisible and — unlike <i>leading</i> spaces, which you may add on purpose for pump sort order — serve no purpose, yet the pump keeps them, so the same name with a stray trailing space becomes a <b>separate entry</b>. Shows the name with the trailing space revealed as a highlighted dot (<span class="ws-dot">·</span>). Fix: delete the trailing space.',
 };
 (function buildRulesPanel(){
   const body = document.getElementById('rules-body');

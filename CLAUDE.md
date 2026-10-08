@@ -101,7 +101,7 @@ The tool expects the standard iRadimed LF477 Excel layout:
 > **Grouping.** Rules are numbered in thematic groups so related checks sit next to each other:
 > **Names & Ordering (1–7)**, **Required Fields & Formatting (8–10)**, **Concentration (11–15)**,
 > **Dose Units & Modes (16–21)**, **Limits & Ranges (22–23)**, **KVO (24–26)**, **Safety /
-> Contraindications (27)**, **Dose Unit Validity (28)**, **Cell Integrity (29)**. The number is just an
+> Contraindications (27)**, **Dose Unit Validity (28)**, **Cell Integrity (29–30)**. The number is just an
 > identifier — display order in the app and this list both follow it.
 
 ## Names & Ordering (1–7)
@@ -480,8 +480,22 @@ critically, make a numeric cell store as **text** — but they slip past every n
 each had a leading `\r\n`, and the tool previously reported **0 issues** on that file. **Calibration:** flags
 exactly those 12 cells on the Orlando file; across the 186-file REVISIONS library it flags **0** (no stray
 control chars) with 0 false positives. Note: ordinary leading/trailing/double *spaces* (U+0020) are NOT
-covered here — those are deliberate sort keys in some dosing names and are surfaced by Rules 2/5/6's
-whitespace reveals instead.
+covered here — leading spaces are deliberate sort keys and a trailing space is Rule 30's job.
+
+### Rule 30 — Trailing Space in Care Area / Drug / Dosing Name
+Flags each of Care Area (B), Drug Name (C), or Dosing Name (D) that ends in one or more **ordinary
+trailing spaces** (`/ +$/`). Severity: **warning**. Rationale (per the user, 2026-10): *leading* spaces are
+intentional — the tool even recommends adding them for pump sort order (Rules 6/5) — but *trailing* spaces
+serve no purpose, are invisible, and the pump keeps them, so the same name with a stray trailing space
+becomes a separate entry. Runs in the main data-row loop; leading and internal spaces are left untouched,
+and trailing tab / non-breaking / zero-width spaces belong to Rule 29 (the `/ $/` test matches only
+U+0020, so there's no overlap). Special Issue-cell render (`i.r30`) shows the trimmed name followed by the
+trailing space(s) as highlighted `·` dots (`ws-dot`) so the invisible space is visible, plus a fix note.
+**Calibration:** trailing spaces are common in real templates — 625 flags across 108 of the 186 REVISIONS
+files (mostly drug names like `DOPamine `, `morphine `, `fentaNYL `), all genuine; 0 false positives on
+leading/internal spaces, 0 render errors. High volume is acceptable because it's warning-severity hygiene,
+not a blocking error. This was added because the user liked that Rule 2 caught a trailing-space collision
+on HonorHealth and wanted trailing spaces surfaced on their own, not only when they form a near-duplicate.
 
 **Look-alike allow-list (`CONTRA_ALLOW`):** `Plasma-Lyte`/`PlasmaLyte` is a crystalloid maintenance fluid,
 not a plasma blood product, so it is explicitly exempted (otherwise bare `plasma` would flag it).
