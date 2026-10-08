@@ -489,8 +489,9 @@ intentional — the tool even recommends adding them for pump sort order (Rules 
 serve no purpose, are invisible, and the pump keeps them, so the same name with a stray trailing space
 becomes a separate entry. Runs in the main data-row loop; leading and internal spaces are left untouched,
 and trailing tab / non-breaking / zero-width spaces belong to Rule 29 (the `/ $/` test matches only
-U+0020, so there's no overlap). Special Issue-cell render (`i.r30`) shows the trimmed name followed by the
-trailing space(s) as highlighted `·` dots (`ws-dot`) so the invisible space is visible, plus a fix note.
+U+0020, so there's no overlap). Special render (`i.r30`, with `col` = care/drug/dosing): the trailing space is revealed **inline in its own
+identity column** — the trimmed name followed by one `ws-trail` marker per space (a red box with a white
+`·`) — and the Issue cell holds only the fix note (the name is not repeated there).
 **Calibration:** trailing spaces are common in real templates — 625 flags across 108 of the 186 REVISIONS
 files (mostly drug names like `DOPamine `, `morphine `, `fentaNYL `), all genuine; 0 false positives on
 leading/internal spaces, 0 render errors. High volume is acceptable because it's warning-severity hygiene,

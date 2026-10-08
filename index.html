@@ -819,13 +819,13 @@ function validate(workbook) {
       // same name with a stray trailing space becomes a separate entry. Flag each of Care Area / Drug /
       // Dosing that ends in an ordinary space. Leading and internal spaces are left alone; trailing
       // tabs / non-breaking / zero-width spaces are caught by Rule 29 instead.
-      for (const [cidx, clabel] of [[C.CARE_AREA, 'Care Area (col B)'], [C.DRUG_NAME, 'Drug Name (col C)'], [C.DOSING_NAME, 'Dosing Name (col D)']]) {
+      for (const [cidx, clabel, col] of [[C.CARE_AREA, 'Care Area (col B)', 'care'], [C.DRUG_NAME, 'Drug Name (col C)', 'drug'], [C.DOSING_NAME, 'Dosing Name (col D)', 'dosing']]) {
         const val = row[cidx];
         if (typeof val === 'string' && / $/.test(val)) {
           const trimmed = val.replace(/ +$/, '');
           const n = val.length - trimmed.length;
           allIssues.push({ rule: 30, ...loc,
-            r30: { label: clabel, trimmed, n },
+            r30: { label: clabel, trimmed, n, col },
             msg: `${clabel} "${trimmed}" has ${n} trailing space${n > 1 ? 's' : ''} — remove it; the pump treats a trailing space as a different entry.` });
         }
       }
@@ -2055,19 +2055,23 @@ function renderResults(issues) {
                                <div class="name-display">${hiddenReveal(i.r29.value)}</div>
                                <div class="rule-note">⚠ ${escHtml(names)} — remove it; the cell displays incorrectly and a number here is stored as text.</div>`;
                 } else if (i.r30 !== undefined) {
-                  // Rule 30: show the name with the trailing space(s) revealed as highlighted dots
-                  const dots = Array(i.r30.n).fill('<span class="ws-trail" title="trailing space">·</span>').join('');
-                  issueCell = `<div class="name-field-label">${escHtml(i.r30.label)}</div>
-                               <div class="name-display">${escHtml(i.r30.trimmed)}${dots}</div>
-                               <div class="rule-note">⚠ ${i.r30.n} trailing space${i.r30.n > 1 ? 's' : ''} — remove it; the pump treats a trailing space as a separate entry from the same name without it.</div>`;
+                  // Rule 30: the trailing space is revealed inline in its own column (below); the Issue
+                  // cell is just the explanation — the name is not repeated here.
+                  issueCell = `<div class="rule-note">⚠ ${i.r30.n} trailing space${i.r30.n > 1 ? 's' : ''} in the ${escHtml(i.r30.label)} — remove it; the pump treats a trailing space as a separate entry from the same name without it.</div>`;
                 } else {
                   issueCell = `<span class="msg-col">${escHtml(i.msg)}</span>`;
                 }
+                // For a Rule 30 row, reveal the trailing space (red box + white dot) inline in the
+                // Care Area / Drug / Dosing column that actually has it; other rows render normally.
+                const r30mark = i.r30 ? Array(i.r30.n).fill('<span class="ws-trail" title="trailing space">·</span>').join('') : '';
+                const careDisp   = (i.r30 && i.r30.col === 'care')   ? escHtml(i.r30.trimmed) + r30mark : escHtml(i.care || '—');
+                const drugDisp   = (i.r30 && i.r30.col === 'drug')   ? escHtml(i.r30.trimmed) + r30mark : escHtml(i.drug || '—');
+                const dosingDisp = (i.r30 && i.r30.col === 'dosing') ? escHtml(i.r30.trimmed) + r30mark : escHtml(i.dosing || '—');
                 return `<tr>
-                  <td><span class="sheet-tag">${escHtml(i.sheet)}</span>${escHtml(i.care || '—')}</td>
+                  <td><span class="sheet-tag">${escHtml(i.sheet)}</span>${careDisp}</td>
                   <td>${i.row}</td>
-                  <td class="drug-col">${escHtml(i.drug || '—')}</td>
-                  <td>${escHtml(i.dosing || '—')}</td>
+                  <td class="drug-col">${drugDisp}</td>
+                  <td>${dosingDisp}</td>
                   <td>${issueCell}</td>
                 </tr>`;
               }).join('')}
