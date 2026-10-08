@@ -236,6 +236,11 @@
     background: #fef3c7; border: 1px solid #f0d488; border-radius: 3px; margin: 0 0.5px;
     font-weight: 700; line-height: 1;
   }
+  .ws-trail {
+    display: inline-block; min-width: 0.7ch; text-align: center; color: #fff;
+    background: #dc2626; border-radius: 3px; margin: 0 0.5px; padding: 0 2px;
+    font-weight: 700; line-height: 1.2;
+  }
   .ws-note { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-size: 11px; color: #b45309; font-style: italic; white-space: nowrap; }
 
@@ -2051,7 +2056,7 @@ function renderResults(issues) {
                                <div class="rule-note">⚠ ${escHtml(names)} — remove it; the cell displays incorrectly and a number here is stored as text.</div>`;
                 } else if (i.r30 !== undefined) {
                   // Rule 30: show the name with the trailing space(s) revealed as highlighted dots
-                  const dots = Array(i.r30.n).fill('<span class="ws-dot" title="trailing space">·</span>').join('');
+                  const dots = Array(i.r30.n).fill('<span class="ws-trail" title="trailing space">·</span>').join('');
                   issueCell = `<div class="name-field-label">${escHtml(i.r30.label)}</div>
                                <div class="name-display">${escHtml(i.r30.trimmed)}${dots}</div>
                                <div class="rule-note">⚠ ${i.r30.n} trailing space${i.r30.n > 1 ? 's' : ''} — remove it; the pump treats a trailing space as a separate entry from the same name without it.</div>`;
@@ -2234,7 +2239,7 @@ const RULE_DESC = {
   28:'The pump can only program per-minute or per-hour infusion rates. Flags any Primary, Bolus, or Loading Dose Unit (cols <code>I</code>/<code>T</code>/<code>AE</code>) whose time denominator is something else — e.g. <code>mg/day</code>, <code>mcg/kg/sec</code>, or <code>units/week</code>. Use <code>…/min</code> or <code>…/hr</code>. Non-rate units (<code>mg</code>, <code>mL</code>, <code>mg/kg</code>, <code>mEq</code>) are left alone.',
   // — Cell Integrity (29–30) —
   29:'Flags any drug-entry cell that hides a control or invisible character — a carriage return or line feed (a stray <b>Alt+Enter</b> line break), a tab, or a non-breaking / zero-width space. These make the cell display wrong (the value jumps to a second line) and silently store a <i>number as text</i>, so they slip past the other checks. The message names the exact cell (e.g. <code>D24</code>) and which character. Fix in Excel: delete the hidden character or retype the cell. Header rows are not checked.',
-  30:'A Care Area, Drug Name, or Dosing Name (cols <code>B</code>/<code>C</code>/<code>D</code>) ends in a <b>trailing space</b>. Trailing spaces are invisible and — unlike <i>leading</i> spaces, which you may add on purpose for pump sort order — serve no purpose, yet the pump keeps them, so the same name with a stray trailing space becomes a <b>separate entry</b>. Shows the name with the trailing space revealed as a highlighted dot (<span class="ws-dot">·</span>). Fix: delete the trailing space.',
+  30:'A Care Area, Drug Name, or Dosing Name (cols <code>B</code>/<code>C</code>/<code>D</code>) ends in a <b>trailing space</b>. Trailing spaces are invisible and — unlike <i>leading</i> spaces, which you may add on purpose for pump sort order — serve no purpose, yet the pump keeps them, so the same name with a stray trailing space becomes a <b>separate entry</b>. Shows the name with the trailing space revealed as a red box with a white dot (<span class="ws-trail">·</span>). Fix: delete the trailing space.',
 };
 (function buildRulesPanel(){
   const body = document.getElementById('rules-body');
