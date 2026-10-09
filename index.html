@@ -88,6 +88,10 @@
   .pump-warning .pw-icon { flex: none; font-size: 26px; line-height: 1.1; }
   .pump-warning p { margin: 0; font-size: 13.5px; line-height: 1.5; color: #1f2937; }
   .pump-warning strong { color: #92400e; }
+  #wrong-template { align-items: flex-start; gap: 14px; margin: 0 0 22px; padding: 16px 20px;
+    background: #fef2f2; border: 2px solid #dc2626; border-radius: 8px; color: #7f1d1d; font-size: 14px; line-height: 1.55; }
+  #wrong-template .wt-icon { font-size: 26px; line-height: 1.1; flex: none; }
+  #wrong-template a { color: #2563eb; font-weight: 700; }
 
   .rule-label { font-size: 11px; color: #888; }
   .drug-col { font-weight: 500; }
@@ -322,6 +326,15 @@
     <p>Or click to browse — accepts .xlsx files</p>
     <div class="file-name" id="file-name-label"></div>
     <input type="file" id="file-input" accept=".xlsx,.xls">
+  </div>
+
+  <div id="wrong-template" style="display:none">
+    <span class="wt-icon" aria-hidden="true">⛔</span>
+    <div>
+      <strong>This looks like a 3860+ (LF173) template.</strong> This tool only pre-checks
+      <b>3870 (LF477)</b> templates, so the results here would be wrong. Please use the 3860+ Pre-Check tool
+      instead: <a href="https://ders-3860-precheck.vercel.app/" target="_blank" rel="noopener">ders-3860-precheck.vercel.app</a>
+    </div>
   </div>
 
   <button class="run-btn" id="run-btn" onclick="runValidation()">▶ Run Pre-Check</button>
@@ -2621,13 +2634,51 @@ function buildSpellingHtml(word, wrong) {
 // ─── File handling ────────────────────────────────────────────────────────────
 let loadedWorkbook = null;
 
+// Detect a 3860+ (LF173) template uploaded by mistake. The 3870 (LF477) template always has a
+// "Care Area" header; the 3860 has none, and instead uses "DOSE UNITS" + "Max Hard Limit" column
+// headers. Requiring the absence of "care area" makes a false positive on a real 3870 effectively
+// impossible. Only the first ~15 rows (the header band) are scanned.
+function looksLike3860(workbook) {
+  let hasCareArea = false, hasDoseUnits = false, hasMaxHard = false;
+  for (const sn of workbook.SheetNames) {
+    const ws = workbook.Sheets[sn];
+    if (!ws || !ws['!ref']) continue;
+    const rng = XLSX.utils.decode_range(ws['!ref']);
+    const lastR = Math.min(rng.e.r, rng.s.r + 14);
+    for (let R = rng.s.r; R <= lastR; R++) {
+      for (let Ci = rng.s.c; Ci <= rng.e.c; Ci++) {
+        const cell = ws[XLSX.utils.encode_cell({ r: R, c: Ci })];
+        if (!cell || cell.v == null) continue;
+        const s = String(cell.v).toLowerCase();
+        if (s.includes('care area')) hasCareArea = true;
+        if (/dose\s*units/.test(s)) hasDoseUnits = true;
+        if (/max\s*hard/.test(s)) hasMaxHard = true;
+      }
+    }
+  }
+  return !hasCareArea && hasDoseUnits && hasMaxHard;
+}
+
 function processFile(file) {
   if (!file) return;
   document.getElementById('file-name-label').textContent = '📄 ' + file.name;
   const reader = new FileReader();
   reader.onload = e => {
     try {
-      loadedWorkbook = XLSX.read(e.target.result, { type: 'array', cellDates: false });
+      const wb = XLSX.read(e.target.result, { type: 'array', cellDates: false });
+      const wrong = document.getElementById('wrong-template');
+      if (looksLike3860(wb)) {
+        // Wrong tool — this is a 3860+ template. Warn and don't let them run it here.
+        loadedWorkbook = null;
+        wrong.style.display = 'flex';
+        document.getElementById('run-btn').style.display = 'none';
+        document.getElementById('summary').style.display = 'none';
+        document.getElementById('results').style.display = 'none';
+        document.getElementById('no-issues').style.display = 'none';
+        return;
+      }
+      wrong.style.display = 'none';
+      loadedWorkbook = wb;
       document.getElementById('run-btn').style.display = 'block';
     } catch(err) {
       alert('Could not read file: ' + err.message);

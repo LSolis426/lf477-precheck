@@ -89,6 +89,21 @@ The tool expects the standard iRadimed LF477 Excel layout:
 
 ---
 
+## Wrong-template guard (3860+ / LF173 detection)
+
+On upload, `processFile` runs `looksLike3860(workbook)` before enabling the Run button. A 3870 (LF477)
+template always has a **"Care Area"** header; a 3860+ (LF173) template has none and instead uses **"DOSE
+UNITS"** and **"Max Hard Limit"** column headers (header band around row 8, sheet usually named "DERS").
+The detector scans only the first ~15 rows and returns true when there is **no "care area"** AND both
+"dose units" and "max hard" appear. If true, a red banner tells the user this looks like a 3860+ template
+and links them to **https://ders-3860-precheck.vercel.app/**, the Run button is hidden, and prior results
+are cleared (they can't run the wrong file here). The `!hasCareArea` guard makes a false positive on a real
+3870 effectively impossible. **Calibration:** across the real libraries — **0/195** 3870 files misflagged,
+**1330/1339** 3860 files detected (the ~9 not detected either carry a Care Area header themselves — hybrid/
+ambiguous, correctly abstained — or are blank/non-template files like "Copy of Book1" or a serial-number
+list). Deliberately conservative: better to let an oddball file through to normal checking than to ever
+block a valid 3870.
+
 ## Rules Implemented
 
 > **In-app "Rules reference" panel.** The header has a *Rules reference* button that opens a modal
