@@ -101,8 +101,8 @@ The tool expects the standard iRadimed LF477 Excel layout:
 > **Grouping.** Rules are numbered in thematic groups so related checks sit next to each other:
 > **Names & Ordering (1–7)**, **Required Fields & Formatting (8–10)**, **Concentration (11–15)**,
 > **Dose Units & Modes (16–21)**, **Limits & Ranges (22–23)**, **KVO (24–26)**, **Safety /
-> Contraindications (27)**, **Dose Unit Validity (28)**, **Cell Integrity (29–30)**. The number is just an
-> identifier — display order in the app and this list both follow it.
+> Contraindications (27)**, **Dose Unit Validity (28)**, **Cell Integrity (29–30)**, **Cross-Drug
+> Consistency (31)**. The number is just an identifier — display order in the app and this list both follow it.
 
 ## Names & Ordering (1–7)
 
@@ -310,10 +310,13 @@ Two outcomes, shown with colored chips in the Issue cell:
   1 mg/mL). Flagged as "likely intentional — verify," not a hard error.
 
 Units are compared through `normUnit()`, which folds singular/plural, synonyms, and case
-(`units` == `unit`, `microgram` == `mcg`, `mL` == `ml`) — so `0.2 units / 1 mL` vs entered
-`20 unit / 100 mL` is recognized as the same 0.2 units/mL and flagged **yellow**, not red. A real
-unit mismatch (e.g. `mcg` vs `mg`) still fails `unitOk` and shows **red**. Rows are skipped when the
-dosing name isn't a concentration expression (e.g. `"mL/hr"`), or when nothing is entered in E–H. This rule carries a per-issue `severity` (`err`/`warn`) rather
+(`units` == `unit`, `microgram` == `mcg`, `mL` == `ml`). For the **same-final-concentration (yellow)**
+test, the two sides are converted to their unit family's base via `unitScale()` (mass `ng`/`mcg`/`mg`/`g`,
+activity `unit`/`milliunit`, volume `mL`/`L`, `mEq`, `mmol`/`mol`) before comparing — so equivalent
+concentrations written in **different units** match: `20 mcg / 1 mL` vs entered `5 mg / 250 mL` are both
+20 mcg/mL → **yellow**, not red (fixed 2026-10 on the Deaconess template, rows 13/14/26/27/31). A genuine
+family mismatch (e.g. `mcg` numerator vs `units` numerator) is not convertible and stays **red**. Rows are
+skipped when the dosing name isn't a concentration expression (e.g. `"mL/hr"`), or when nothing is entered in E–H. This rule carries a per-issue `severity` (`err`/`warn`) rather
 than a fixed rule severity; the summary counts and section-header color honor it (see
 `i.severity || RULE_INFO[i.rule].severity` in `renderResults`). Verified against
 `MultiCare Corporate 3870 DERS 06.30.26.xlsx`: correctly flags PEDIATRIC row 8 (dexmedeTOMidine,
@@ -499,6 +502,44 @@ files (mostly drug names like `DOPamine `, `morphine `, `fentaNYL `), all genuin
 leading/internal spaces, 0 render errors. High volume is acceptable because it's warning-severity hygiene,
 not a blocking error. This was added because the user liked that Rule 2 caught a trailing-space collision
 on HonorHealth and wanted trailing spaces surfaced on their own, not only when they form a near-duplicate.
+
+## Cross-Drug Consistency (31)
+
+### Rule 31 — Similar Drugs with Different Limits
+A faithful **port of the 3860 pre-check's Rule 11** ("Similar drugs with different limits", severity `warn`),
+adapted to the 3870's positional columns. When two or more entries are the **same drug** (fuzzy base match
+via `similarBase`), the **same name-prefix**, the **same indication tags** (`indicationTags`), **the same
+care area**, and the **same Primary Dose Unit** (col I), their limits are expected to match; differing
+columns are flagged for review. Ported helpers (copied from the 3860 `rules.js` so future diffs stay easy):
+value helpers `isBlank`/`text`/`toNum`/`isNum`/`numStr`; dictionaries `DRUGS`/`NAME_STOP`/`DESCRIPTORS`/
+`INDICATION`; name parser `nameInfo` + its tree (`knownWord`, `abbrevOf`, `compoundOK`, `stripSuffix`, …);
+and `similarBase`/`indicationTags`/`leadTag` (reusing the 3870's existing `levenshtein`).
+
+**Clustering** (finalization, workbook-wide): key = care area (`sheet|||col-B`, filled down) + prefix +
+`indicationTags(name)` + `similarBase(base)`. Within each cluster, members are grouped by normalized
+Primary Dose Unit (`r31norm`); a unit-group with ≥2 members and ≥1 differing compare column emits one
+`warn` carrying `r31:{base,prefix,unit,cols,members:[{excelRow,name,vals}]}`.
+
+**Compare columns** (`R31_CMP_COLS`, 0-based): Primary J–N (9–13) + Primary times O–S (14–18) + Bolus U–Y
+(20–24) + Bolus times Z–AD (25–29) + Loading AF–AJ (31–35) + Loading times AK–AO (36–40) + Weight AP–AS
+(41–44). This is the 3860's `[DOSE_LIMITS, WEIGHTS, PRIMARY_TIMES, 'U', BOLUS_DOSES, BOLUS_TIMES]` set
+expanded to include Loading; the 3860's bare `'U'` bolus-**unit** column is intentionally omitted (grouping
+is already by dose unit).
+
+**Care-area separation (the key 3870 adaptation).** The 3860 has no care-area column and separates versions
+only by name-derived indication tags; the 3870 **does** have care-area columns, so the cluster key includes
+the care area. Without it, the *same drug in Adult vs Pediatric vs NICU* would be compared and flagged even
+though those limits legitimately differ — this is exactly the rule's own stated exclusion ("different
+indication or **care area** are not compared"). Rate Mode placeholders are skipped (no parseable base).
+
+**Render**: an `ord-group`-style box per cluster (base + prefix + dose unit + sheet tag) with a compact table
+— one row per member (name + row chip), one column per differing field, differing cells marked `.r31-diff`
+(red). **Calibration:** across the 195-file REVISIONS library — 0 validate/render errors, **221 flags across
+96 files** (down from 474/113 before the care-area split removed the Adult-vs-Peds false positives).
+Separation verified: `ketamine Status` vs `ketamine pain`, `heparin PEDS` vs `heparin`, `propofol ANES` vs
+`propofol sedation` are NOT compared; concentration versions (`STD`/`DBL`/`QUAD`/`MAX`) ARE. Known accepted
+behavior (faithful to 3860, `warn` only): different infusion-duration regimens written into the name
+(`pip-tazo (30 minutes)` vs `(4 hours)`) still cluster and flag, since durations aren't indication tags.
 
 **Look-alike allow-list (`CONTRA_ALLOW`):** `Plasma-Lyte`/`PlasmaLyte` is a crystalloid maintenance fluid,
 not a plasma blood product, so it is explicitly exempted (otherwise bare `plasma` would flag it).

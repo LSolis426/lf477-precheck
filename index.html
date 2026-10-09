@@ -135,6 +135,16 @@
   .ord-fix { padding: 8px 14px; background: #f5f3ff; border-top: 1px solid #ddd6fe; font-size: 12px; color: #5b21b6; }
   .ord-symbol { padding: 8px 14px; background: #fdf4ff; border-top: 1px solid #e9d5ff; font-size: 12px; color: #7e22ce; }
   .row-chip { display: inline-block; padding: 1px 5px; background: #ede9fe; color: #5b21b6; border-radius: 3px; font-size: 10px; font-weight: 600; margin-left: 4px; }
+
+  /* Rule 31 similar-drug compare table */
+  .r31-scroll { overflow-x: auto; border-top: 1px solid #ddd6fe; }
+  .r31-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .r31-table th { background: #f5f3ff; color: #5b21b6; font-size: 11px; font-weight: 700; white-space: nowrap; padding: 7px 10px; border-bottom: 1px solid #ddd6fe; }
+  .r31-table td { padding: 7px 10px; border-bottom: 1px solid #f0eefc; white-space: nowrap; font-family: ui-monospace, Menlo, Consolas, monospace; text-align: center; }
+  .r31-table tr:last-child td { border-bottom: none; }
+  .r31-table td.r31-entry { text-align: left; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-weight: 500; color: #4a5568; }
+  .r31-table td.r31-diff { background: #fde8e8; color: #b91c1c; font-weight: 700; }
+  .r31-blank { color: #c7c9d1; }
   .space-indicator { display: inline-block; background: #fef08a; border: 1.5px dashed #ca8a04; border-radius: 3px; width: 1ch; height: 1.1em; vertical-align: middle; margin-right: 1px; cursor: help; }
 
   /* Rule 9 character overflow highlighting */
@@ -557,6 +567,16 @@ function normUnit(u) {
   return (s.length > 1 && s.endsWith('s')) ? s.slice(0, -1) : s; // fallback: drop plural "s"
 }
 
+// Unit → { fam, k } where k converts the amount to the family's base unit, so Rule 15 can compare final
+// concentrations across convertible units (e.g. 5 mg = 5000 mcg). Only same-family units are comparable.
+const UNIT_SCALE = {
+  ng: ['mass', 0.001], mcg: ['mass', 1], mg: ['mass', 1000], g: ['mass', 1e6],
+  unit: ['act', 1], milliunit: ['act', 0.001],
+  ml: ['vol', 1], l: ['vol', 1000],
+  meq: ['meq', 1], mmol: ['mole', 1], mol: ['mole', 1000],
+};
+function unitScale(u) { const e = UNIT_SCALE[normUnit(u)]; return e ? { fam: e[0], k: e[1] } : null; }
+
 // Hidden / invisible characters that should never appear in a template cell (Rule 29). Any other
 // control character (code point < 32) is also flagged generically as "control character".
 const HIDDEN_CHARS = {
@@ -699,6 +719,287 @@ function pumpCompare(aStr, bStr) {
   return aStr.length - bStr.length;
 }
 
+// ─── Rule 31 name/indication helpers (ported from the 3860 pre-check, Rule 11) ──
+// Faithful copy of the 3860 tool's drug-name parsing + indication/care-area tagging so the two
+// tools stay in sync. Names kept identical to the 3860 source for easy future diffs. Only change:
+// reuse the 3870's existing levenshtein() instead of re-defining it. Used by Rule 31 only.
+
+// value helpers (3860: isBlank/text/toNum/isNum/numStr)
+const isBlank = (v) => v == null || (typeof v === 'string' && v.trim() === '');
+const text = (v) => (v == null ? '' : String(v));
+function toNum(v) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
+  if (typeof v !== 'string') return NaN;
+  const s = v.trim().replace(/,/g, '');
+  return /^[+-]?(\d+\.?\d*|\.\d+)$/.test(s) ? parseFloat(s) : NaN;
+}
+const isNum = (v) => !isBlank(v) && !Number.isNaN(toNum(v));
+// Canonical decimal string of a value, killing float noise (0.1+0.2 etc).
+function numStr(v) {
+  let s;
+  if (typeof v === 'string') s = v.trim().replace(/,/g, '');
+  else s = String(Number(v.toPrecision(12)));
+  if (/e/i.test(s)) s = Number(s).toFixed(20);
+  if (s.includes('.')) s = s.replace(/0+$/, '').replace(/\.$/, '');
+  return s;
+}
+
+// ---------- drug-name dictionary (for name parsing + prefix detection) ----------
+const DRUGS = `
+  abciximab acetaminophen acetylcysteine acyclovir adenosine alfentanil alprostadil alteplase amikacin
+  aminocaproic aminophylline amiodarone amphotericin ampicillin angiotensin argatroban atracurium atropine
+  azithromycin bivalirudin bumetanide bupivacaine buprenorphine butorphanol caffeine calcitonin calcium
+  cangrelor carboprost cefazolin cefepime cefoxitin ceftazidime ceftriaxone chloride chlorothiazide
+  chlorpromazine cisatracurium citrate clevidipine clindamycin clonidine cyclosporine dantrolene daptomycin
+  desmopressin dexamethasone dexmedetomidine dextrose diazepam digoxin diltiazem diphenhydramine dobutamine
+  dopamine doxapram droperidol enalaprilat ephedrine epinephrine epoprostenol eptifibatide ertapenem
+  erythromycin esmolol esomeprazole etomidate famotidine fenoldopam fentanyl fluconazole flumazenil
+  fosphenytoin furosemide gentamicin glucagon glucose glycopyrrolate haloperidol heparin hydralazine
+  hydrocortisone hydromorphone ibutilide insulin isoproterenol ketamine ketorolac labetalol lacosamide
+  levetiracetam levofloxacin levothyroxine lidocaine linezolid lorazepam magnesium mannitol meperidine
+  meropenem methadone methohexital methylene methylprednisolone metoclopramide metoprolol metronidazole
+  micafungin midazolam milrinone morphine nalbuphine naloxone neostigmine nesiritide nicardipine nimodipine
+  nitroglycerin nitroprusside norepinephrine octreotide ondansetron oxytocin pantoprazole pancuronium
+  papaverine pentobarbital phenobarbital phentolamine phenylephrine phenytoin phosphate piperacillin
+  potassium procainamide prochlorperazine promethazine propofol propranolol prostaglandin protamine
+  regadenoson remifentanil rocuronium ropivacaine salbutamol sodium succinylcholine sufentanil sulfate
+  tacrolimus tazobactam terbutaline thiopental tirofiban tobramycin tranexamic treprostinil valproate
+  vancomycin vasopressin vecuronium verapamil zoledronic zosyn
+  acetate bicarbonate gluconate blue regular human albumin immune globulin factor tpa
+  kcl nacl ntg txa precedex nitro bicarb mag levo neo epi norepi vaso dex
+  acid pge tenecteplase tnk levophed cardizem adenoscan nimbex diprivan cleviprex cardene activase tnkase
+  integrilin aggrastat angiomax brevibloc nipride vasostrict giapreza neosynephrine primacor dilaudid
+  versed ativan sublimaze zemuron anectine lasix protonix pitocin flolan veletri remodulin natrecor
+  cerebyx keppra amicar kcentra narcan romazicon pepcid zofran toradol ofirmev
+  andexxa conivaptan ferumoxytol isuprel torsemide ciprofloxacin glycerin sildenafil liothyronine balfaxar
+  prostin cordarone dobutrex normodyne sandostatin kengreal cathflo alfaxalone lopressor humulin ivig
+  cefotaxime oxacillin sulbactam norcuron tenormin bumex
+`.trim().split(/\s+/);
+const DRUG_SET = new Set(DRUGS);
+// Words that may appear in a name but are not drug words.
+const NAME_STOP = new Set(['std', 'standard', 'dbl', 'double', 'quad', 'triple', 'conc', 'concentrated',
+  'ds', 'ss', 'max', 'premix', 'pf', 'ns', 'drip', 'infusion', 'inf', 'gtt', 'high', 'low', 'dose',
+  'bolus', 'load', 'loading', 'pca', 'adult', 'adlt', 'peds', 'ped', 'neo', 'neonate', 'unit', 'units',
+  'mcg', 'mg', 'ml', 'mu', 'kg', 'hr', 'min', 'and', 'in', 'w', 'with', 'per', 'rate', 'only', 'mri', 'iv']);
+// Non-drug descriptor words (care areas, indications, protocol words). Also accepted when
+// truncated to 4+ letters ("Stand" = standard, "Radio" = radiology).
+const DESCRIPTORS = `
+  standard single double triple quadruple stroke radiology rad cardiac cardiology cardio neuro neurology
+  echo dse stress
+  trauma icu picu nicu cvicu sicu micu ccu cicu ed er pacu ob labor delivery anesthesia anes sedation
+  procedural procedure proc cath lab ir interventional ct emergency critical care general protocol
+  titration titrate maintenance maint continuous cont intermittent push rescue mild moderate severe
+  pediatric neonatal neonate infant adult weight based fixed sliding scale dka sepsis shock stat
+  transplant renal liver burn oncology seizure status epilepticus pain analgesia epidural nurse bag
+  syringe vial small large volume vol mini micro macro hypertension htn afib svt acs post pre op
+  surgery surgical ortho spine vascular stepdown floor tele telemetry rapid response code
+  non nwb wt vented vent hit gib misc fluid fluids syr induction varices piv civ cvc picc infus reversal
+  hyperglycemia hypergly dvt pe cath dir cathdir based titr gtts ml/hr bridge flush
+  reminder add bottom note notes flat all seizures pediatrics central hour half for acute bleed bleeding
+  hepatic lysis palliative maximum minimum other ecmo pao stress inhaled pulm pulmonary postpartum ards
+  adults name overdose nursing sedate icp anastomosis anastamosis nmb peripheral dilute medication stemi
+  nstemi seize impella intubated norm normal this formula med bariatric doac specials pvd resist resistant
+  bronchospasm initial delete remove char limit order rev full aptt hhs beta alpha rass intensity mgmt
+  management eras hypothermia protocols embolism opo time set below vad lvad intra poa ultra lytic
+  arrhythmia dialysis risk gfr occlusion opioid cvs pressor cathlab loop adv novent ventilated pph ideal
+  leg ischemia about itching nondka fib patency rtu laminated sheet manual control glucostab sunrise
+  cerebral minimal empty mridium specialty thrombolysis thrombosis vte cva pci str strk stk stke strke
+  stnd stand sng sngl sgl dble qud quads quint adu sed con cen cent wgt wght wtbased bsd nonwt nonwb nwt
+  nonstand lrg cvr cvu fldr infs infsn drp dou sdu cdt btl afl hconc lowdose concentrate concentration
+  artery arterial arteries vein venous catheter org organ runit runits hiet sd ld md vasc surg cardsurg sur art embol mx impl gol occ qua del augm perip periph intub cntrl overdse seizr hem
+`.trim().split(/\s+/);
+const DESCRIPTOR_SET = new Set(DESCRIPTORS);
+
+// Is token a known drug word, or a truncation of one?
+function knownWord(t) {
+  if (t.length < 3 || NAME_STOP.has(t) || DRUG_SET.has(t) || isDescriptor(t)) return true;
+  return DRUGS.some((w) => w.startsWith(t) || (t.startsWith(w) && t.length - w.length <= 1));
+}
+function isDescriptor(t) {
+  if (NAME_STOP.has(t) || DESCRIPTOR_SET.has(t)) return true;
+  if (t.length >= 4 && !DRUGS.some((w) => w.startsWith(t)) && DESCRIPTORS.some((w) => w.startsWith(t))) return true;
+  // Shortened descriptor ("thrblysis" = thrombolysis, "bronchspsm"): letters only dropped.
+  return t.length >= 5 && !abbrevOf(t) && DESCRIPTORS.some((w) => w.length >= 6 && abbrevFits(t, w));
+}
+// t is w with letters only dropped (same first 2 letters, keeps at least ~half the word).
+function abbrevFits(t, w) {
+  if (t.length < 4 || t.length >= w.length || t[0] !== w[0] || t[1] !== w[1]) return null;
+  let j = 0;
+  for (const ch of t) { j = w.indexOf(ch, j); if (j < 0) return null; j++; }
+  return t.length >= 0.45 * j ? w.slice(0, j) : null;
+}
+// The drug a vowel-dropped / shortened word stands for, or null.
+function abbrevOf(t) {
+  let best = null;
+  for (const w of DRUGS) {
+    if (w.length < 6) continue;
+    const span = abbrevFits(t, w);
+    if (span && (!best || w.length < best.w.length)) best = { w, span };
+  }
+  return best;
+}
+// Two words run together: "alteplasevasc", "norepinephrnquad", "pedepinephrine", "midazolammg".
+function compoundOK(t) {
+  const drugish = (x) => x.length >= 4 && !isDescriptorExact(x) && (knownWordBasic(x) || !!abbrevOf(x));
+  for (let i = 3; i <= t.length - 2; i++) {
+    const a = t.slice(0, i), b = t.slice(i);
+    if (drugish(a) && (isDescriptorExact(b) || (b.length >= 4 && knownWordBasic(b)))) return true;
+    if (isDescriptorExact(a) && drugish(b)) return true;
+  }
+  // two descriptors squished together: "WtCONC", "WtSTD", "ConcMAX"
+  for (let i = 2; i <= t.length - 2; i++) if (isDescriptorExact(t.slice(0, i)) && isDescriptorExact(t.slice(i))) return true;
+  return false;
+}
+const isDescriptorExact = (x) => NAME_STOP.has(x) || DESCRIPTOR_SET.has(x);
+function knownWordBasic(t) {
+  if (DRUG_SET.has(t)) return true;
+  return DRUGS.some((w) => w.startsWith(t) || (t.startsWith(w) && t.length - w.length <= 1));
+}
+// 0 = reads as a drug/descriptor (exact, truncated, shortened or joined); else edit distance.
+function wordScore(t) {
+  if (knownWord(t) || compoundOK(t) || abbrevOf(t)) return 0;
+  return bestDist(t);
+}
+function bestDist(t) {
+  if (knownWord(t)) return 0;
+  let best = Infinity;
+  for (const w of DRUGS) {
+    for (let L = t.length - 1; L <= t.length + 1; L++) {
+      if (L >= 3 && L <= w.length) best = Math.min(best, levenshtein(t, w.slice(0, L)));
+    }
+  }
+  return best;
+}
+// "norepinephrineMAX" → "norepinephrine": drop a stuck-on STD/DBL/MAX-style suffix.
+function stripSuffix(t) {
+  for (const sfx of ['max', 'std', 'dbl', 'quad', 'conc', 'premix', 'drip', 'sd', 'hd', 'ld', 'md', 'ds']) {
+    if (t.length > sfx.length + 3 && t.endsWith(sfx) && knownWord(t.slice(0, -sfx.length))) return t.slice(0, -sfx.length);
+  }
+  return t;
+}
+
+// Split a name into p/n/a prefix, the drug-word part (base), and the rest.
+function nameInfo(name) {
+  let s = text(name).trim().replace(/\s+/g, ' ');
+  let prefix = '';
+  let m = s.match(/^([anpANP])(?: +|[.\-_:] *)([A-Za-z].*)$/);
+  if (m && /^n$/i.test(m[1]) && /^acetyl/i.test(m[2])) m = null; // "N-acetylcysteine" is a drug name
+  const word = s.match(/^(peds?|pedi|pediatric|neo|neonatal|nicu|picu)\b[\s.\-_:]*(.+)$/i) || s.match(/^(PEDS?|PEDI|NEO|NICU|PICU)([a-z].*)$/);
+  const sym = s.match(/^([+*]+)\s*(.+)$/);
+  if (m) { prefix = m[1].toLowerCase(); s = m[2]; }
+  else if (word) { prefix = /^n/i.test(word[1]) ? 'n' : 'p'; s = word[2]; }
+  else if (sym) { prefix = sym[1]; s = sym[2]; }
+  else {
+    m = s.match(/^([pnaPNA])([A-Za-z]+)(.*)$/);
+    if (m) {
+      const first = m[2].replace(/([a-z])([A-Z][a-z]).*$/, '$1');
+      const whole = stripSuffix((m[1] + first).toLowerCase()), rest = stripSuffix(first.toLowerCase());
+      if (rest.length >= 4 && wordScore(rest) < wordScore(whole)) { prefix = m[1].toLowerCase(); s = m[2] + m[3]; }
+    }
+  }
+  const lead = s.split(/\d/)[0].replace(/([a-z])([A-Z][a-z])/g, '$1 $2');
+  const words = lead.toLowerCase().split(/[^a-z]+/).filter(Boolean);
+  const tokens = words.filter((t) => !isDescriptor(t) && !/^x\d*$/.test(t)).map(stripSuffix);
+  const base = tokens.join(' ');
+  return { prefix, rest: s, base, tokens };
+}
+
+// Two base names refer to the same drug (truncation / small spelling drift).
+function similarBase(a, b) {
+  if (!a || !b) return false;
+  if (a === b || a.replace(/ /g, '') === b.replace(/ /g, '')) return true; // "nitro prusside" = "nitroprusside"
+  const [s, l] = a.length <= b.length ? [a, b] : [b, a];
+  if (s.length >= 4 && l.startsWith(s)) return true;
+  if (Math.min(a.length, b.length) < 6 || levenshtein(a, b) > 2) return false;
+  // Close spellings of two DIFFERENT real drugs are not the same drug.
+  const da = drugOf(a.split(' ')[0]), db = drugOf(b.split(' ')[0]);
+  return !(da && db && da !== db);
+}
+// The listed drug a word names (exactly, or as a truncation of 6+ letters), else null.
+function drugOf(t) {
+  if (DRUG_SET.has(t)) return t;
+  if (t.length < 6) return null;
+  const hits = DRUGS.filter((w) => w.length >= 6 && w.startsWith(t));
+  return hits.length === 1 ? hits[0] : null;
+}
+
+// Indication / care-area words in a name → a tag. Returns a stable key ('' when none).
+const INDICATION = [
+  ['anes', /^(anes|anest|anesth\w*|anaesth\w*)$/], ['sed', /^sed(a(t(e|ion)?)?)?$/],
+  ['status', /^(status|epilep\w*|seiz\w*|sz)$/], ['pain', /^(pain|palliative|pca|analges\w*)$/],
+  ['stroke', /^(stroke|strk|stk|stke|strke|cva)$/], ['pe', /^(pe|dvt|vte|embol\w*|ekos|cdt|cathdir)$/],
+  ['acs', /^(acs|mi|stemi|nstemi|pci|cardiac|cardio\w*)$/], ['shock', /^(shock|sepsis|septic)$/],
+  ['gi', /^(gi|gib|bleed\w*|varic\w*)$/], ['renal', /^(renal|hd|crrt|dialysis)$/], ['hepatic', /^(hepatic|liver)$/],
+  ['hit', /^hit$/], ['ecmo', /^ecmo$/], ['neuro', /^neuro\w*$/], ['proc', /^(ir|rad|radiology|cath|cathlab)$/],
+  ['echo', /^(echo|dse|stress|stressecho)$/],
+  ['ob', /^(ob|obstetrics?)$/], ['labor', /^(labor|labour|l&d|induction|induct|induc|ind|augmentation|augment|augm|aug)$/],
+  ['postpartum', /^(pph|pp|postpartum|post-partum|postpart|hemorrhage|hemorrh|delivery|deliv|del|postdeliver|postdelivery|postdel)$/], ['dka', /^(dka|hhs)$/],
+  ['peripheral', /^(peripheral|periph|perip|per|piv)$/], ['central', /^(central|cen|cent|cvc|picc|civ)$/],
+  ['bolus', /^(bolus|bol|load|loading|ld|push|ivp)$/], ['continuous', /^(continuous|contin|cont|maint|maintenance|md)$/],
+  ['surgery', /^(vasc|vascular|surg|surgery|surgical|cardsurg)$/],
+  ['arterial', /^(artery|arterial|arteries)$/],
+  ['hiet', /^(hiet|overdose)$/],
+  ['glucostab', /^glucostab$/], ['fixed', /^fixed$/], ['resistant', /^resist\w*$/],
+  ['peds', /^(p|peds?|pedi|pediatrics?|paeds?|picu)$/], ['neo', /^(neo|neonat\w*|nicu)$/],
+  ['icu', /^(icu|cvicu|sicu|micu|ccu|cicu)$/], ['or', /^(or|pacu)$/], ['ed', /^(ed|er)$/], ['tele', /^tele\w*$/],
+];
+// The indication / care-area tag of a name's FIRST word ("ANES propofol" → 'anes').
+function leadTag(name) {
+  const w = (text(name).trim().replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z]+/).filter(Boolean)[0]) || '';
+  for (const [tag, re] of INDICATION) if (tag !== 'peds' && tag !== 'neo' && re.test(w)) return tag;
+  return '';
+}
+function indicationTags(name) {
+  const words = text(name).replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z]+/).filter(Boolean);
+  const tags = new Set();
+  // "non" negates the next group word: "non cath" / "noncath" / "non-cath" is NOT the cath group
+  words.forEach((w0, k) => {
+    let w = w0, neg = k > 0 && words[k - 1] === 'non';
+    if (!neg && /^non[a-z]{2,}$/.test(w) && INDICATION.some(([, re]) => re.test(w.slice(3)))) { w = w.slice(3); neg = true; }
+    for (const [tag, re] of INDICATION) if (re.test(w)) tags.add(neg ? 'non-' + tag : tag);
+  });
+  // High vs low dose ranges have different limits — but "high conc" / "low conc" is a CONCENTRATION
+  // version and must still be compared.
+  words.forEach((w, k) => {
+    const conc = /^conc/.test(words[k + 1] || '');
+    if (!conc && /^(high|hi|highdose|hd)$/.test(w)) tags.add('high');
+    if (!conc && /^(low|lo|lowdose|ultralow|ultralo)$/.test(w)) tags.add('low');
+  });
+  // A weight band in the name means a weight-specific version with its own limits.
+  const band = text(name).toLowerCase().replace(/\s+/g, '')
+    .match(/(?:[<>≤≥]=?|or[<>])?(?:wt)?\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?kg(?:or[<>])?|[<>≤≥]=?(?:wt)?\d+(?:\.\d+)?|wt[<>≤≥]?\d+(?:\.\d+)?(?:-\d+)?(?![\d.]*(?:mg|mcg|g\b|units?|ml|\/))/);
+  if (band) tags.add('wt:' + band[0]);
+  return [...tags].sort().join('+');
+}
+
+// Rule 31 compare columns (0-based idx → "letter (short name)" label). These are the 3870 positional
+// equivalents of the 3860 Rule 11 compare set, expanded to include the Loading section the 3870 adds.
+const R31_CMP_COLS = [
+  { idx: 9,  label: 'J (Primary Initial)' },  { idx: 10, label: 'K (Primary Upper Hard)' },
+  { idx: 11, label: 'L (Primary Lower Hard)' }, { idx: 12, label: 'M (Primary Upper Soft)' },
+  { idx: 13, label: 'N (Primary Lower Soft)' },
+  { idx: 14, label: 'O (Primary Initial Time)' }, { idx: 15, label: 'P (Primary Time Upper Hard)' },
+  { idx: 16, label: 'Q (Primary Time Lower Hard)' }, { idx: 17, label: 'R (Primary Time Upper Soft)' },
+  { idx: 18, label: 'S (Primary Time Lower Soft)' },
+  { idx: 20, label: 'U (Bolus Initial)' }, { idx: 21, label: 'V (Bolus Upper Hard)' },
+  { idx: 22, label: 'W (Bolus Lower Hard)' }, { idx: 23, label: 'X (Bolus Upper Soft)' },
+  { idx: 24, label: 'Y (Bolus Lower Soft)' },
+  { idx: 25, label: 'Z (Bolus Initial Time)' }, { idx: 26, label: 'AA (Bolus Time Upper Hard)' },
+  { idx: 27, label: 'AB (Bolus Time Lower Hard)' }, { idx: 28, label: 'AC (Bolus Time Upper Soft)' },
+  { idx: 29, label: 'AD (Bolus Time Lower Soft)' },
+  { idx: 31, label: 'AF (Loading Initial)' }, { idx: 32, label: 'AG (Loading Upper Hard)' },
+  { idx: 33, label: 'AH (Loading Lower Hard)' }, { idx: 34, label: 'AI (Loading Upper Soft)' },
+  { idx: 35, label: 'AJ (Loading Lower Soft)' },
+  { idx: 36, label: 'AK (Loading Initial Time)' }, { idx: 37, label: 'AL (Loading Time Upper Hard)' },
+  { idx: 38, label: 'AM (Loading Time Lower Hard)' }, { idx: 39, label: 'AN (Loading Time Upper Soft)' },
+  { idx: 40, label: 'AO (Loading Time Lower Soft)' },
+  { idx: 41, label: 'AP (Weight Upper Hard)' }, { idx: 42, label: 'AQ (Weight Lower Hard)' },
+  { idx: 43, label: 'AR (Weight Upper Soft)' }, { idx: 44, label: 'AS (Weight Lower Soft)' },
+];
+// Normalize one cell for Rule 31 comparison: blank→'', numeric→canonical number string, else
+// trimmed lowercase text with units?→unit fold (matches the 3860's norm).
+const r31norm = (v) => (isBlank(v) ? '' : isNum(v) ? numStr(toNum(v)) : text(v).trim().toLowerCase().replace(/units?/, 'unit'));
+
 // ─── Main validation ──────────────────────────────────────────────────────────
 function validate(workbook) {
   const allIssues = [];
@@ -706,6 +1007,7 @@ function validate(workbook) {
   const dosingGroups = new Map(); // Rule 6: "sheet|||care|||drug" → [{dosing, row}]
   const drugOrderMap = new Map(); // Rule 5: "sheet|||care" → { sheet, care, drugs: [{name, row}] }
   const drugCaseMap = new Map();  // Rule 2: "sheet|||care" → Map(normalizedName → Map(rawName → [rows]))
+  const rule31Entries = [];       // Rule 31: every real drug entry workbook-wide {sheet, care, excelRow, name, row}
 
   for (const sheetName of workbook.SheetNames) {
     const ws = workbook.Sheets[sheetName];
@@ -820,6 +1122,7 @@ function validate(workbook) {
     }
 
     // Data rows start at index 3 (Excel row 4)
+    let careFill31 = null; // Rule 31: care area fills down within a sheet
     for (let ri = 3; ri < data.length; ri++) {
       const row = data[ri] || [];
       const excelRow = ri + 1;
@@ -835,6 +1138,14 @@ function validate(workbook) {
       if (isEmpty(careArea) && isEmpty(drugName) && isEmpty(dosingName)) continue;
 
       const loc = { sheet: sheetName, row: excelRow, care: careArea, drug: drugName, dosing: dosingName };
+
+      // ── Rule 31: collect real drug entries (care area fills down) ──
+      // Every non-blank Drug Name that isn't a "Rate Mode" placeholder, with the filled-down care area
+      // and the full positional cell array, for the cross-drug consistency pass after the sheet loop.
+      if (!isEmpty(careArea)) careFill31 = careArea;
+      if (!isEmpty(drugName) && !String(drugName).trim().toLowerCase().startsWith('rate mode')) {
+        rule31Entries.push({ sheet: sheetName, care: careFill31, excelRow, name: String(drugName), row });
+      }
 
       // ── Rule 30: Trailing space on an identity name (cols B / C / D) ──
       // A trailing space is invisible and virtually never intentional — leading spaces are used to
@@ -1269,12 +1580,25 @@ function validate(workbook) {
         const cell = v => (v==null || v==='') ? '(blank)' : String(v);
         const enteredStr = `${cell(cAmtRaw)} ${cell(cUnit)} / ${cell(cDilRaw)} ${cell(cDilUnit)}`;
 
-        // Same final concentration? numbers differ but amt÷dilAmt ratio matches, with consistent units
+        // Same final concentration? Convert each side to its unit family's base so equivalent
+        // concentrations written in different units still match (e.g. "20 mcg / 1 mL" == "5 mg / 250 mL",
+        // both 20 mcg/mL). Only same-family numerators (and same-family denominators) are convertible;
+        // a real family mismatch (e.g. mcg vs units) stays "no match" → red.
         let sameEnd = false, ratioTxt = '';
-        if (unitOk && isFinite(cAmt) && isFinite(cDil) && nDil !== 0 && cDil !== 0) {
-          const rn = nAmt / nDil, rc = cAmt / cDil;
-          sameEnd = Math.abs(rn - rc) <= 1e-9 * Math.max(1, Math.abs(rn), Math.abs(rc));
-          ratioTxt = `${+rn.toFixed(6)} ${nUnit}/${nDilUnit}`;
+        if (isFinite(cAmt) && isFinite(cDil) && nDil !== 0 && cDil !== 0) {
+          const nNum = unitScale(nUnit), cNum = cUnit ? unitScale(cUnit) : unitScale(nUnit);   // blank entered unit → assume name's
+          const nDen = unitScale(nDilUnit), cDen = cDilUnit ? unitScale(cDilUnit) : unitScale(nDilUnit);
+          if (nNum && cNum && nNum.fam === cNum.fam && nDen && cDen && nDen.fam === cDen.fam) {
+            const rn = (nAmt * nNum.k) / (nDil * nDen.k);
+            const rc = (cAmt * cNum.k) / (cDil * cDen.k);
+            sameEnd = Math.abs(rn - rc) <= 1e-9 * Math.max(1, Math.abs(rn), Math.abs(rc));
+            const BASE = { mass: 'mcg', act: 'unit', vol: 'mL', meq: 'mEq', mole: 'mmol' };
+            ratioTxt = `${+rn.toPrecision(6)} ${BASE[nNum.fam]}/${BASE[nDen.fam]}`;
+          } else if (unitOk) {
+            const rn = nAmt / nDil, rc = cAmt / cDil;   // units not scale-known but equivalent → raw ratio
+            sameEnd = Math.abs(rn - rc) <= 1e-9 * Math.max(1, Math.abs(rn), Math.abs(rc));
+            ratioTxt = `${+rn.toFixed(6)} ${nUnit}/${nDilUnit}`;
+          }
         }
 
         if (sameEnd) {
@@ -1646,6 +1970,59 @@ function validate(workbook) {
     });
   }
 
+  // ── Rule 31 finalization: similar drugs (same drug, prefix, indication, dose unit) → limits match ─
+  // Ported from the 3860 pre-check's Rule 11. Clusters entries workbook-wide by prefix + indication
+  // tags + similar base name; within each cluster, groups by normalized Primary Dose Unit (col I);
+  // any unit-group with ≥2 members and differing compare-column values gets one warning. Versions for
+  // a different indication / care area (e.g. "ketamine Status" vs "ketamine pain") are separated by
+  // indicationTags so they are NOT compared; concentration versions (STD/DBL/QUAD/MAX) still are.
+  {
+    // Build clusters. Key includes the CARE AREA (sheet + col B) so the same drug in different care
+    // areas (Adult vs Pediatric vs NICU vs MRI, …) is NOT compared — their limits legitimately differ.
+    // The 3860 has no care-area column and separates versions by name-derived indication tags only; the
+    // 3870 has real care-area columns, so we separate by those as well (plus the same name-based tags).
+    const clusters = [];
+    for (const e of rule31Entries) {
+      const info = nameInfo(e.name);
+      e.info = info;
+      if (!info.base) continue;
+      const tags = indicationTags(e.name);
+      const careKey = `${e.sheet}|||${String(e.care || '').trim().toLowerCase()}`;
+      const cl = clusters.find(k => k.careKey === careKey && k.prefix === info.prefix && k.tags === tags
+        && k.members.some(m => similarBase(m.info.base, info.base)));
+      if (cl) cl.members.push(e); else clusters.push({ careKey, prefix: info.prefix, tags, members: [e] });
+    }
+    // Within each cluster, group by normalized Primary Dose Unit (col I) and flag differing limits.
+    for (const cl of clusters) {
+      const byUnit = new Map();
+      for (const m of cl.members) {
+        const uv = m.row[C.PRI_UNIT];
+        if (isBlank(uv)) continue;
+        const k = r31norm(uv).replace(/\s+/g, '');
+        if (!byUnit.has(k)) byUnit.set(k, []);
+        byUnit.get(k).push(m);
+      }
+      for (const [, ms] of byUnit) {
+        if (ms.length < 2) continue;
+        const diffCols = R31_CMP_COLS.filter(c => new Set(ms.map(m => r31norm(m.row[c.idx]))).size > 1);
+        if (!diffCols.length) continue;
+        const base = ms[0].info.base;
+        const unitDisp = text(ms[0].row[C.PRI_UNIT]).trim();
+        allIssues.push({
+          rule: 31, severity: 'warn',
+          sheet: ms[0].sheet, care: ms[0].care, row: ms[0].excelRow,
+          drug: base, dosing: null,
+          r31: {
+            base, prefix: cl.prefix, unit: unitDisp,
+            cols: diffCols.map(c => c.label),
+            members: ms.map(m => ({ excelRow: m.excelRow, name: m.name, vals: diffCols.map(c => m.row[c.idx]) })),
+          },
+          msg: `${ms.length} "${base}" entries${cl.prefix ? ` (prefix "${cl.prefix}")` : ''} dosed in ${unitDisp} have different values in ${diffCols.map(c => c.label).join(', ')}.`,
+        });
+      }
+    }
+  }
+
   return allIssues;
 }
 
@@ -1690,6 +2067,8 @@ const RULE_INFO = {
   // — Cell Integrity (29–30) —
   29: { title: 'Rule 29 — Hidden Control / Invisible Character in a Cell (line break, tab, non-breaking/zero-width space)', severity: 'err' },
   30: { title: 'Rule 30 — Trailing Space in Care Area / Drug / Dosing Name (cols B / C / D)', severity: 'warn' },
+  // — Cross-Drug Consistency (31) —
+  31: { title: 'Rule 31 — Similar Drugs with Different Limits', severity: 'warn' },
 };
 
 function renderResults(issues) {
@@ -2017,6 +2396,53 @@ function renderResults(issues) {
         }).join('');
         bodyHtml = `<div class="ord-groups-wrap">${groupsHtml}</div>`;
       }
+    } else if (Number(ruleNum) === 31) {
+      // Special rendering: one box per flagged cluster — a compact table with one row per member
+      // (Excel row + name) and one column per differing field, differing cells highlighted.
+      if (ruleIssues.length === 0) {
+        bodyHtml = '<div class="ok-banner">✅ Similar drugs dosed in the same unit all share the same limits.</div>';
+      } else {
+        const dispVal = v => isEmpty(v) || (typeof v === 'string' && v.trim() === '')
+          ? '<span class="r31-blank">—</span>'
+          : (isNum(v) ? escHtml(numStr(toNum(v))) : escHtml(String(v)));
+        const groupsHtml = ruleIssues.map(issue => {
+          const r = issue.r31;
+          // Per column, the most common normalized value; cells not matching it are highlighted.
+          const modal = r.cols.map((_, ci) => {
+            const counts = new Map();
+            r.members.forEach(m => { const k = r31norm(m.vals[ci]); counts.set(k, (counts.get(k) || 0) + 1); });
+            let best = null, bestN = -1;
+            for (const [k, n] of counts) if (n > bestN) { bestN = n; best = k; }
+            return best;
+          });
+          const headCells = r.cols.map(c => `<th>${escHtml(c)}</th>`).join('');
+          const bodyRows = r.members.map(m => {
+            const cells = m.vals.map((v, ci) => {
+              const diff = r31norm(v) !== modal[ci];
+              return `<td class="${diff ? 'r31-diff' : ''}">${dispVal(v)}</td>`;
+            }).join('');
+            return `<tr>
+              <td class="r31-entry">${escHtml(String(m.name).trim() || '—')}<span class="row-chip">Row ${m.excelRow}</span></td>
+              ${cells}
+            </tr>`;
+          }).join('');
+          return `
+            <div class="ord-group">
+              <div class="ord-group-header">
+                ⚖️ <strong>${escHtml(r.base)}</strong>${r.prefix ? ` <span style="font-weight:600">(prefix "${escHtml(r.prefix)}")</span>` : ''}
+                &nbsp;— dosed in <strong>${escHtml(r.unit)}</strong>
+                &nbsp;<span class="sheet-tag">${escHtml(issue.sheet)}</span>
+              </div>
+              <div class="r31-scroll">
+                <table class="r31-table">
+                  <thead><tr><th>Entry</th>${headCells}</tr></thead>
+                  <tbody>${bodyRows}</tbody>
+                </table>
+              </div>
+            </div>`;
+        }).join('');
+        bodyHtml = `<div class="ord-groups-wrap">${groupsHtml}</div>`;
+      }
     } else {
       // Standard rendering for all other rules
       const stdBadge = ruleIssues.length === 0 ? '✓ Clear' : `${ruleIssues.length} issue${ruleIssues.length !== 1 ? 's' : ''}`;
@@ -2271,6 +2697,8 @@ const RULE_DESC = {
   // — Cell Integrity (29–30) —
   29:'Flags any drug-entry cell that hides a control or invisible character — a carriage return or line feed (a stray <b>Alt+Enter</b> line break), a tab, or a non-breaking / zero-width space. These make the cell display wrong (the value jumps to a second line) and silently store a <i>number as text</i>, so they slip past the other checks. The message names the exact cell (e.g. <code>D24</code>) and which character. Fix in Excel: delete the hidden character or retype the cell. Header rows are not checked.',
   30:'A Care Area, Drug Name, or Dosing Name (cols <code>B</code>/<code>C</code>/<code>D</code>) ends in a <b>trailing space</b>. Trailing spaces are invisible and — unlike <i>leading</i> spaces, which you may add on purpose for pump sort order — serve no purpose, yet the pump keeps them, so the same name with a stray trailing space becomes a <b>separate entry</b>. Shows the name with the trailing space revealed as a red box with a white dot (<span class="ws-trail">·</span>). Fix: delete the trailing space.',
+  // — Cross-Drug Consistency (31) —
+  31:'When several entries are the <b>same drug</b> (same name, same p/n prefix) dosed in the <b>same Primary Dose Unit</b>, their dose/time/weight limits are expected to match; any field that differs across them is listed side by side for review. Versions for a <i>different indication or care area</i> are not compared with each other — anesthesia, sedation, status/seizure, pain, stroke, PE/DVT, ACS/MI, shock, GI bleed, renal, hepatic, HIT, ECMO, peripheral vs central line, bolus/loading vs continuous/maintenance, high vs low dose, weight bands, OB/labor/postpartum, and insulin protocols (e.g. <code>ketamine Status</code> vs <code>ketamine pain</code> are kept separate). Concentration versions (<code>STD</code>, <code>DBL</code>, <code>QUAD</code>, <code>MAX</code>) <b>are</b> compared. Differences may be intentional — this is a warning to confirm, not an error.',
 };
 (function buildRulesPanel(){
   const body = document.getElementById('rules-body');
