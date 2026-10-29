@@ -209,9 +209,16 @@ computes `fixPlan` = per-item `{spaces, at}` (how many spaces, and the character
 i.e. before the number), plus `fixKind`, but only after **verifying** via `pumpCompare` that applying it
 actually reproduces the template order.
 
-Two strategies are tried in order (whichever first reproduces the template order wins):
+Three strategies are tried in order (whichever first reproduces the template order wins):
 - **`fixKind: 'number'`** — number-width padding (above). For numeric dosing names; spaces go *before the
-  number* (`at` = offset of the number).
+  number* (`at` = offset of the number). Message: "…before the number in X **so every number is the same
+  width**". Handles ascending numeric orders where widths differ (e.g. `Propofol 50mL` before `100mL`).
+- **`fixKind: 'number-order'`** — graduated spaces **before the number**, for number-based groups where
+  width-padding doesn't reproduce the order (e.g. numbers already equal width but listed largest-first,
+  `Ketamine 250mL` before `Ketamine 100mL`). Same right-to-left graduated algorithm as `leading` but the
+  spaces are inserted at each item's number offset, not at the front — so the recommended space stays in
+  the number region (what the user expects) rather than before the drug word. Message: "…before the number
+  in X" (no "same width" clause). Added 2026-10 at the user's request (Southeast Iowa Ketamine).
 - **`fixKind: 'leading'`** — general **graduated leading spaces**, for any template order including
   **non-numeric** groups (e.g. `Std` / `Dbl` / `5x`, where `5x` sorts first because digits precede
   letters). Computed right-to-left, adding just enough leading spaces to each item to force it ahead of

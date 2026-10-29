@@ -1859,6 +1859,27 @@ function validate(workbook) {
           }
         }
       }
+      // ── Strategy A2 — graduated spaces BEFORE the number (number-based groups) ──
+      // When every item is "<prefix><number>" but equal-width padding (A) didn't reproduce the order —
+      // e.g. the numbers are already the same width but listed largest-first ("Ketamine 250mL" before
+      // "Ketamine 100mL") — add just enough spaces right before each number to force the template order.
+      // This keeps the recommended space in the number region (what the user expects) instead of at the
+      // very front of the name (Strategy B). Only runs when all items parse to prefix+number.
+      if (parsed.every(Boolean)) {
+        const at2 = parsed.map(p => p.at);
+        const s2 = entries.map(() => 0);
+        const pad2 = i => entries[i].dosing.slice(0, at2[i]) + ' '.repeat(s2[i]) + entries[i].dosing.slice(at2[i]);
+        for (let i = entries.length - 2; i >= 0; i--) {
+          let guard = 0;
+          while (pumpCompare(pad2(i), pad2(i + 1)) >= 0 && guard++ < 100) s2[i]++;
+        }
+        const padded2 = entries.map((_, i) => pad2(i));
+        const order2 = padded2.map((_, i) => i).sort((a, b) => pumpCompare(padded2[a], padded2[b]));
+        if (order2.every((oi, pos) => oi === pos)) {
+          const toAdd = entries.map((e, i) => ({ dosing: e.dosing, row: e.row, at: at2[i], spaces: s2[i] })).filter(p => p.spaces > 0);
+          if (toAdd.length) { fixPlan = toAdd; fixKind = 'number-order'; return; }
+        }
+      }
       // ── Strategy B — general graduated leading spaces ──
       // Works for any template order, including non-numeric groups (e.g. Std / Dbl / 5x). Add just enough
       // leading spaces to each item so the pump sort equals the template order: more leading spaces sort
