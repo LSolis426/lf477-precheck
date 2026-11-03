@@ -83,6 +83,9 @@
   .pill-blue { background: #dbeafe; color: #1e40af; }
 
   .ok-banner { padding: 16px 20px; color: #1a7f45; font-size: 13px; font-weight: 500; }
+  .miss-banner { margin: 14px 18px; padding: 14px 16px; background: #fffbeb; border: 1px solid #fcd34d;
+    border-left: 4px solid #f59e0b; border-radius: 8px; color: #78350f; font-size: 13px; line-height: 1.5; }
+  .miss-banner strong { color: #92400e; }
   .pump-warning { display: flex; align-items: flex-start; gap: 14px; margin: 0 0 22px;
     padding: 14px 18px; background: #fffbeb; border: 2px solid #111; border-radius: 8px; }
   .pump-warning .pw-icon { flex: none; font-size: 26px; line-height: 1.1; }
@@ -1021,6 +1024,7 @@ function validate(workbook) {
   const drugOrderMap = new Map(); // Rule 5: "sheet|||care" → { sheet, care, drugs: [{name, row}] }
   const drugCaseMap = new Map();  // Rule 2: "sheet|||care" → Map(normalizedName → Map(rawName → [rows]))
   const rule31Entries = [];       // Rule 31: every real drug entry workbook-wide {sheet, care, excelRow, name, row}
+  let hasVasopressin = false;     // Rule 32: is vasopressin present anywhere in the library?
 
   for (const sheetName of workbook.SheetNames) {
     const ws = workbook.Sheets[sheetName];
@@ -1149,6 +1153,10 @@ function validate(workbook) {
 
       // Skip if row has no drug context at all
       if (isEmpty(careArea) && isEmpty(drugName) && isEmpty(dosingName)) continue;
+
+      // ── Rule 32: note whether vasopressin appears anywhere (drug or dosing name) ──
+      // "Vasostrict" is the common brand name for vasopressin, so count it too.
+      if (!hasVasopressin && /vasopressin|vasostrict/i.test(`${drugName} ${dosingName}`)) hasVasopressin = true;
 
       const loc = { sheet: sheetName, row: excelRow, care: careArea, drug: drugName, dosing: dosingName };
 
@@ -2079,6 +2087,18 @@ function validate(workbook) {
     }
   }
 
+  // ── Rule 32 finalization: Vasopressin present in the library? ──
+  // Library-wide completeness check (not per-row). Vasopressin is a commonly expected vasopressor;
+  // if the entire template has no vasopressin (or Vasostrict) entry anywhere, surface a single
+  // advisory reminder so the pharmacist can confirm whether it should be added. Advisory (warn),
+  // not an error — some libraries legitimately omit it.
+  if (!hasVasopressin) {
+    allIssues.push({
+      rule: 32, severity: 'warn', r32: true,
+      msg: 'No vasopressin entry was found anywhere in this drug library. Ask the pharmacist whether vasopressin should be added.',
+    });
+  }
+
   return allIssues;
 }
 
@@ -2125,6 +2145,8 @@ const RULE_INFO = {
   30: { title: 'Rule 30 — Trailing Space in Care Area / Drug / Dosing Name (cols B / C / D)', severity: 'warn' },
   // — Cross-Drug Consistency (31) —
   31: { title: 'Rule 31 — Similar Drugs with Different Limits', severity: 'warn' },
+  // — Library Completeness (32) —
+  32: { title: 'Rule 32 — Vasopressin Not Found in Library', severity: 'warn' },
 };
 
 function renderResults(issues) {
@@ -2499,6 +2521,13 @@ function renderResults(issues) {
         }).join('');
         bodyHtml = `<div class="ord-groups-wrap">${groupsHtml}</div>`;
       }
+    } else if (Number(ruleNum) === 32) {
+      // Library-wide presence check — one advisory banner, no per-row table.
+      bodyHtml = ruleIssues.length === 0
+        ? '<div class="ok-banner">✅ Vasopressin is present in the drug library.</div>'
+        : `<div class="miss-banner">⚠️ <strong>No vasopressin found in this library.</strong><br>
+            Ask the pharmacist whether vasopressin should be added. (Vasostrict, the brand name for
+            vasopressin, counts as present.)</div>`;
     } else {
       // Standard rendering for all other rules
       const stdBadge = ruleIssues.length === 0 ? '✓ Clear' : `${ruleIssues.length} issue${ruleIssues.length !== 1 ? 's' : ''}`;
@@ -2793,6 +2822,8 @@ const RULE_DESC = {
   30:'A Care Area, Drug Name, or Dosing Name (cols <code>B</code>/<code>C</code>/<code>D</code>) ends in a <b>trailing space</b>. Trailing spaces are invisible and — unlike <i>leading</i> spaces, which you may add on purpose for pump sort order — serve no purpose, yet the pump keeps them, so the same name with a stray trailing space becomes a <b>separate entry</b>. Shows the name with the trailing space revealed as a red box with a white dot (<span class="ws-trail">·</span>). Fix: delete the trailing space.',
   // — Cross-Drug Consistency (31) —
   31:'When several entries are the <b>same drug</b> (same name, same p/n prefix) dosed in the <b>same Primary Dose Unit</b>, their dose/time/weight limits are expected to match; any field that differs across them is listed side by side for review. Versions for a <i>different indication or care area</i> are not compared with each other — anesthesia, sedation, status/seizure, pain, stroke, PE/DVT, ACS/MI, shock, GI bleed, renal, hepatic, HIT, ECMO, peripheral vs central line, bolus/loading vs continuous/maintenance, high vs low dose, weight bands, OB/labor/postpartum, and insulin protocols (e.g. <code>ketamine Status</code> vs <code>ketamine pain</code> are kept separate). Concentration versions (<code>STD</code>, <code>DBL</code>, <code>QUAD</code>, <code>MAX</code>) <b>are</b> compared. Differences may be intentional — this is a warning to confirm, not an error.',
+  // — Library Completeness (32) —
+  32:'Checks whether <b>vasopressin</b> appears anywhere in the library (Drug or Dosing Name; the brand name <code>Vasostrict</code> counts too). If none is found, flags a single reminder to ask the pharmacist whether vasopressin should be added. Advisory only — some libraries legitimately omit it.',
 };
 (function buildRulesPanel(){
   const body = document.getElementById('rules-body');
