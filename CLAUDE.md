@@ -242,19 +242,26 @@ skipped. This deliberately skips categorical / weight-band dosings (`STD`, `HIGH
 so same-magnitude doses (e.g. `500mg/250mL` vs `500mg/110mL`) keep their entered order and aren't falsely
 flagged. Only column D is checked — column-C (drug) alphabetical order is Rule 5's job.
 
-**Unit-aware magnitude (`parseDose` / `UNIT_FAM`).** Comparison is by the leading amount *normalized by its
-unit*, not the raw leading number — so `200mcg/1mL` and `0.2mg/1mL` are recognized as the **same amount**
-(both 200 mcg) and don't flag, and a cross-unit inversion like `1mg` entered before `500mcg` **does** flag
-(1 mg = 1000 mcg > 500 mcg). Normalization runs only when **every** dosing in the drug shares one known
-unit family — mass (`ng`/`mcg`/`mg`/`g`), activity (`units`/`milliunits`), `mEq`, mole (`mmol`/`mol`),
-volume (`mL`); if any dosing's unit is unknown or the families differ, it falls back to the raw leading
-number (original behavior) so incomparable units are never mis-ordered. This fixed a real false positive
-(Lake Regional Nitroglycerin `200mcg` vs `0.2mg`) while leaving all genuine flags intact (e.g. Sutter Alta
-Bates' 10 Max-before-SS drugs still flag). Display: side-by-side "As entered" vs "Smallest → largest (recommended)" per
-flagged drug, moved rows highlighted. Severity: warn. **Calibration:** across ~40 real templates this
-flags ~9% of all-numeric-leading drugs, and spot-checks were all genuine (e.g. `16mg` before `8mg`,
-`32,16,8` → `8,16,32`, `0.5` before `0.1`) — the naive full-sort version was ~57% (mostly false
-positives on weight-band/categorical dosings), which is why the number-leading gate exists.
+**Flag only when out of order by BOTH measures (`parseDose`/`parseConc`/`UNIT_FAM`).** A drug is flagged
+only when its entered order is out of order by **both** (1) the **leading number as written** (`parseDose`
+— what the pump displays and the clinician scans) **and** (2) the **true final concentration** (`parseConc`
+— numerator ÷ denominator, unit-normalized). If the list ascends (non-decreasing) by **either** measure it
+is left alone. This respects two legitimate orderings the user confirmed:
+- *ascends by written number* — `0.08mg/1mL, 0.4mg/1mL, 100mcg/1mL` reads 0.08, 0.4, 100 on screen (even
+  though 0.4mg > 100mcg by concentration). Not flagged (UNC Pardee phenylephrine, 2026-11).
+- *ascends by concentration* — `32mcg/1mL, 0.1mg/1mL` is 32 → 100 mcg/mL. Not flagged even though the
+  written numbers 32, 0.1 descend (Sutter Eden). Equal-concentration restatements like `200mcg/10mL,
+  5mg/250mL` (all 20 mcg/mL) or `200mcg/1mL, 0.2mg/1mL` (both 200 mcg/mL) are also never flagged.
+
+Only entries out of order *both* ways (e.g. `16mg/250mL` before `8mg/250mL` — 16>8 written and 64>32 mcg/mL)
+are flagged; the recommendation sorts by **final concentration** (falling back to the written number when a
+dosing isn't a clean amount/amount concentration). `parseConc` needs all dosings to share one numerator
+family and one denominator family, else only the written-number check applies. Display: side-by-side "As
+entered" vs "Smallest → largest (recommended)", moved rows highlighted. Severity: warn. **Calibration
+(2026-11):** this two-measure rule flags **49/195** library drugs vs **69** under the old
+magnitude-only sort — the 20 removed were all false positives (same-concentration restatements like
+Amiodarone `450mg/250mL` & `360mg/200mL` both 1.8 mg/mL, or concentration-ascending pairs like Esmolol
+10→20 mg/mL); **0** new flags. Remaining flags (16→8, 32→16→8, 0.5→0.1, …) are all genuine.
 
 ## Required Fields & Formatting (8–10)
 
