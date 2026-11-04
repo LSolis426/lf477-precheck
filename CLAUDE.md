@@ -373,7 +373,7 @@ unit/mode column a letters-only guard and every dose/limit/weight column a numbe
 guard. Verified against the MultiCare file (0 false positives) and synthetic cases confirming
 letters in a time column report only under Rule 10, and in AU only under Rule 26.
 
-### Rule 18 — Mismatched Dose Units (mL Primary with non-mL Bolus/Loading)
+### Rule 18 — Mismatched Dose Units (mL vs non-mL between Primary and Bolus/Loading)
 mL-based dose units are only compatible with other mL-based units. This rule flags a row where the
 Primary Dose Unit (col I) is mL-based (`mL`, `mL/hr`, …) but a Bolus (col T) or Loading (col AE) unit is
 **not** mL-based — or the reverse (a non-mL primary with an mL Bolus/Loading). Mixing them means the
