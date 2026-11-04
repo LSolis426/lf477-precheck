@@ -735,6 +735,11 @@ function pumpCompare(aStr, bStr) {
   return aStr.length - bStr.length;
 }
 
+// A "Rate Mode" entry may be pinned with a leading space (sorts to the top) or a leading "~" (sorts
+// to the bottom), so strip any leading space/tilde before matching — otherwise a "~Rate Mode" entry
+// would not be recognized as Rate Mode by any of the rules that special-case it (Rule 33 included).
+const isRateModeName = v => String(v || '').replace(/^[\s~]+/, '').toLowerCase().startsWith('rate mode');
+
 // ─── Rule 31 name/indication helpers (ported from the 3860 pre-check, Rule 11) ──
 // Faithful copy of the 3860 tool's drug-name parsing + indication/care-area tagging so the two
 // tools stay in sync. Names kept identical to the 3860 source for easy future diffs. Only change:
@@ -1022,6 +1027,7 @@ function validate(workbook) {
   const dupGroups = new Map();    // Rule 1: pairKey → [loc, ...]
   const dosingGroups = new Map(); // Rule 6: "sheet|||care|||drug" → [{dosing, row}]
   const drugOrderMap = new Map(); // Rule 5: "sheet|||care" → { sheet, care, drugs: [{name, row}] }
+  const rateModeMap = new Map();  // Rule 33: "sheet|||care" → { sheet, care, entries: [{name, row}] } (Rate Mode only)
   const drugCaseMap = new Map();  // Rule 2: "sheet|||care" → Map(normalizedName → Map(rawName → [rows]))
   const rule31Entries = [];       // Rule 31: every real drug entry workbook-wide {sheet, care, excelRow, name, row}
   let hasVasopressin = false;     // Rule 32: is vasopressin present anywhere in the library?
@@ -1097,7 +1103,7 @@ function validate(workbook) {
         drugCountByCare.set(key, (drugCountByCare.get(key) || 0) + 1);
       }
     }
-    const isRateMode = v => String(v || '').trim().toLowerCase().startsWith('rate mode');
+    const isRateMode = v => isRateModeName(v);
     // A "Rate Mode" entry that is the only drug entry in its care area — skip its KVO/Quick Recall checks.
     const rateModeSolo = (drugName, careVal) =>
       isRateMode(drugName) && drugCountByCare.get(String(careVal || '').trim().toLowerCase()) === 1;
@@ -1109,7 +1115,7 @@ function validate(workbook) {
     // display-order checks (Rules 6 & 5) run too.
     const rowsWithDrug = data.slice(3).filter(r => r && !r.every(isEmpty) && !isEmpty(r[C.DRUG_NAME]));
     if (rowsWithDrug.length > 0 &&
-        rowsWithDrug.every(r => String(r[C.DRUG_NAME]).trim().toLowerCase().startsWith('rate mode'))) {
+        rowsWithDrug.every(r => isRateModeName(r[C.DRUG_NAME]))) {
       let caFill = null;
       for (let ri = 3; ri < data.length; ri++) {
         const row = data[ri] || [];
@@ -1164,7 +1170,7 @@ function validate(workbook) {
       // Every non-blank Drug Name that isn't a "Rate Mode" placeholder, with the filled-down care area
       // and the full positional cell array, for the cross-drug consistency pass after the sheet loop.
       if (!isEmpty(careArea)) careFill31 = careArea;
-      if (!isEmpty(drugName) && !String(drugName).trim().toLowerCase().startsWith('rate mode')) {
+      if (!isEmpty(drugName) && !isRateModeName(drugName)) {
         rule31Entries.push({ sheet: sheetName, care: careFill31, excelRow, name: String(drugName), row });
       }
 
@@ -1200,7 +1206,7 @@ function validate(workbook) {
       dosingGroups.get(ordKey).push({ dosing: String(dosingName||''), row: excelRow });
 
       // ── Rule 5: Collect drug names per (sheet, care area) in template order
-      if (!isEmpty(drugName) && !String(drugName).trim().toLowerCase().startsWith('rate mode')) {
+      if (!isEmpty(drugName) && !isRateModeName(drugName)) {
         const caKey13 = `${sheetName}|||${String(careArea||'').trim()}`;
         if (!drugOrderMap.has(caKey13)) drugOrderMap.set(caKey13, { sheet: sheetName, care: careArea, drugs: [] });
         const d13 = drugOrderMap.get(caKey13);
@@ -1220,6 +1226,16 @@ function validate(workbook) {
         const rawName = String(drugName);
         if (!spellings.has(rawName)) spellings.set(rawName, []);
         spellings.get(rawName).push(excelRow);
+      }
+
+      // ── Rule 33: Collect "Rate Mode" entries (excluded from Rule 5) with their position ──
+      // Rule 5 ignores Rate Mode, so its sort position is never checked. Capture each Rate Mode
+      // entry with its row; the finalization compares where it is PLACED (first vs last in the care
+      // area) against where its current prefix will make the pump SORT it.
+      if (!isEmpty(drugName) && isRateModeName(drugName)) {
+        const caKeyRM = `${sheetName}|||${String(careArea||'').trim()}`;
+        if (!rateModeMap.has(caKeyRM)) rateModeMap.set(caKeyRM, { sheet: sheetName, care: careArea, entries: [] });
+        rateModeMap.get(caKeyRM).entries.push({ name: String(drugName).trimEnd(), row: excelRow });
       }
 
       // ── Rule 27: Contraindicated drug types (blood, chemo, TPN/enteral nutrition) ──
@@ -1754,7 +1770,7 @@ function validate(workbook) {
       }
 
       // ── Rule 3: Drug name spelling ────────────────────────────────────────
-      if (!isEmpty(drugName) && !String(drugName).trim().toLowerCase().startsWith('rate mode')) {
+      if (!isEmpty(drugName) && !isRateModeName(drugName)) {
         const trimmedDrug = String(drugName).trimEnd();
         // Extract first alphabetic run (handles Tallman lettering like EPINEPHrine, leading spaces)
         const firstWord = trimmedDrug.trim().match(/^([A-Za-z]{4,})/);
@@ -1944,6 +1960,47 @@ function validate(workbook) {
     });
   }
 
+  // ── Rule 33 finalization: Rate Mode sort position ─────────────────────────
+  // "Rate Mode" is pinned in the pump's alphabetical drug list by a prefix: a LEADING SPACE sorts it
+  // to the top (space < letters), a leading "~" to the bottom (tilde, code 126, sorts after z). Using
+  // the same code-point order as pumpCompare, check the prefix matches WHERE the entry is placed in
+  // its care area. Entered LAST (meant for the bottom) but it won't sort to the bottom → recommend
+  // "~"; entered FIRST (meant for the top) but it won't sort to the top → recommend a leading space.
+  // Rate Mode placed in the middle of the entry order is ambiguous and left alone.
+  for (const [caKey, { sheet, care, entries }] of rateModeMap) {
+    const realDrugs = drugOrderMap.get(caKey)?.drugs || [];
+    if (!realDrugs.length) continue; // Rate Mode alone — no drug list to order against
+    const drugRows = realDrugs.map(d => d.row);
+    const minDrugRow = Math.min(...drugRows), maxDrugRow = Math.max(...drugRows);
+    for (const rm of entries) {
+      const name = rm.name;                      // trailing already stripped; leading preserved
+      const bare = name.replace(/^[\s~]+/, '');  // name without any leading space / tilde
+      const hasLeadSpace = /^\s/.test(name);
+      const fc = name.charCodeAt(0);
+      const fcl = (fc >= 65 && fc <= 90) ? fc + 32 : fc; // lowercase, matching pumpCompare
+      const sortsBottom = fcl > 122;             // sorts after "z" (e.g. a leading "~")
+      const atBottom = rm.row > maxDrugRow;      // placed after every real drug in the care area
+
+      // Only the bottom case: a Rate Mode entry placed last (meant to sit at the bottom of the pump's
+      // alphabetical list) but whose prefix won't put it there — a leading space floats it to the top,
+      // and a plain name sorts it in among the drugs. Recommend the "~" prefix. We do NOT flag the
+      // reverse (plain Rate Mode entered first): plenty of templates leave it unpinned at the top and
+      // that is not something to warn on.
+      if (atBottom && !sortsBottom) {
+        allIssues.push({
+          rule: 33, severity: 'warn', sheet, care, row: rm.row, drug: name, dosing: null,
+          r33: { name, bare, hasLeadSpace, fix: '~' + bare },
+          msg: `"${name.trim()}" is entered at the BOTTOM of ${String(care || '').trim() || 'this care area'}, `
+             + (hasLeadSpace
+                 ? `but its leading space makes the pump sort it to the TOP of the drug list. `
+                 : `but it will sort in among the drug list, not at the bottom. `)
+             + `Remove any leading space and put "~" in front so it stays at the bottom: "~${bare}" `
+             + `("~" sorts after Z on the pump).`,
+        });
+      }
+    }
+  }
+
   // ── Rule 2 finalization: Drug Names that differ only by capitalization / whitespace ────
   // Within a care area, spellings that normalize to the same key but were entered differently
   // (e.g. "vasopressin -   Shock" vs "vasopressin -   SHOCK") program as SEPARATE pump entries
@@ -2006,7 +2063,7 @@ function validate(workbook) {
   for (const [ordKey, entries] of dosingGroups) {
     if (entries.length < 2) continue;
     const [sheet, care, drug] = ordKey.split('|||');
-    if (String(drug).trim().toLowerCase().startsWith('rate mode')) continue;
+    if (isRateModeName(drug)) continue;
     const parsed = entries.map(e => parseDose(e.dosing));
     if (parsed.some(p => p === null)) continue; // not all numeric-leading → skip
     // Flag ONLY when the entered order is out of order by BOTH measures:
@@ -2147,6 +2204,8 @@ const RULE_INFO = {
   31: { title: 'Rule 31 — Similar Drugs with Different Limits', severity: 'warn' },
   // — Library Completeness (32) —
   32: { title: 'Rule 32 — Vasopressin Not Found in Library', severity: 'warn' },
+  // — Rate Mode Placement (33) —
+  33: { title: 'Rule 33 — Rate Mode at Bottom Not Pinned with ~ (will sort up the list)', severity: 'warn' },
 };
 
 function renderResults(issues) {
@@ -2596,6 +2655,13 @@ function renderResults(issues) {
                   // Rule 30: the trailing space is revealed inline in its own column (below); the Issue
                   // cell is just the explanation — the name is not repeated here.
                   issueCell = `<div class="rule-note">⚠ ${i.r30.n} trailing space${i.r30.n > 1 ? 's' : ''} in the ${escHtml(i.r30.label)} — remove it; the pump treats a trailing space as a separate entry from the same name without it.</div>`;
+                } else if (i.r33 !== undefined) {
+                  // Rule 33: Rate Mode sort position — reveal the current prefix and the fix.
+                  const cur = i.r33.hasLeadSpace
+                    ? `<span class="ws-trail" title="leading space">·</span>${escHtml(i.r33.bare)}`
+                    : escHtml(i.r33.name.trim());
+                  issueCell = `<div class="rule-note">⚠ ${escHtml(i.msg)}</div>
+                               <div style="margin-top:6px;font-size:12.5px;color:#4a5568;">Now: <code>${cur}</code> &nbsp;→&nbsp; Recommended: <code>${escHtml(i.r33.fix)}</code></div>`;
                 } else {
                   issueCell = `<span class="msg-col">${escHtml(i.msg)}</span>`;
                 }
@@ -2824,6 +2890,8 @@ const RULE_DESC = {
   31:'When several entries are the <b>same drug</b> (same name, same p/n prefix) dosed in the <b>same Primary Dose Unit</b>, their dose/time/weight limits are expected to match; any field that differs across them is listed side by side for review. Versions for a <i>different indication or care area</i> are not compared with each other — anesthesia, sedation, status/seizure, pain, stroke, PE/DVT, ACS/MI, shock, GI bleed, renal, hepatic, HIT, ECMO, peripheral vs central line, bolus/loading vs continuous/maintenance, high vs low dose, weight bands, OB/labor/postpartum, and insulin protocols (e.g. <code>ketamine Status</code> vs <code>ketamine pain</code> are kept separate). Concentration versions (<code>STD</code>, <code>DBL</code>, <code>QUAD</code>, <code>MAX</code>) <b>are</b> compared. Differences may be intentional — this is a warning to confirm, not an error.',
   // — Library Completeness (32) —
   32:'Checks whether <b>vasopressin</b> appears anywhere in the library (Drug or Dosing Name; the brand name <code>Vasostrict</code> counts too). If none is found, flags a single reminder to ask the pharmacist whether vasopressin should be added. Advisory only — some libraries legitimately omit it.',
+  // — Rate Mode Placement (33) —
+  33:'The pump lists drugs alphabetically, so a <b>Rate Mode</b> entry is pinned with a prefix: a <b>leading space</b> sorts it to the <b>top</b> (space comes before letters), a leading <b>~</b> (tilde, which sorts after <code>z</code>) sorts it to the <b>bottom</b>. Flags a Rate Mode entry entered <b>last</b> in its care area — so it\'s meant to sit at the bottom — whose prefix won\'t keep it there: a leading space floats it to the top, or a plain name sorts it in among the drugs. Recommends the fix: remove any leading space and add <code>~</code>. A plain Rate Mode left unpinned at the top is common and is <b>not</b> flagged.',
 };
 (function buildRulesPanel(){
   const body = document.getElementById('rules-body');

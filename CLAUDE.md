@@ -579,6 +579,30 @@ review. **Calibration:** across 173 real templates it flags exactly one genuine 
 `Blood (RBC's)` drug — with **zero** false positives (verified Propofol, Plasma-Lyte, insulin, DOPamine,
 NORepinephrine, LORazepam, and every other real drug name are left alone).
 
+### Rule 32 — Vasopressin Not Found in Library
+Library-wide **completeness** check (severity `warn`), not per-row. During the main loop a single
+`hasVasopressin` flag is set if any Drug Name **or** Dosing Name matches `/vasopressin|vasostrict/i`
+(the brand name **Vasostrict** counts). In finalization, if the flag is still false, one advisory issue
+(`r32:true`) is pushed asking the pharmacist whether vasopressin should be added. Rendered as a single
+amber `.miss-banner` (special-render branch on `Number(ruleNum)===32`), or a green "Clear" when present.
+Advisory only — many care-area-specific templates legitimately omit it (≈141/202 real templates lack it).
+
+### Rule 33 — Rate Mode at Bottom Not Pinned with ~
+The pump lists drugs alphabetically (`pumpCompare`, code-point order: space/symbols < digits < letters <
+`~`). A **Rate Mode** entry is pinned to the top with a **leading space** or to the bottom with a leading
+**`~`** (tilde = 126, sorts after `z`). Rule 5 deliberately excludes Rate Mode, so its position was never
+checked. Rule 33 captures Rate Mode entries per care area (`rateModeMap`) and, in finalization, flags
+(severity `warn`) any Rate Mode entry placed **last** in its care area (`row > max real-drug row`) whose
+prefix won't keep it at the bottom (`!sortsBottom`, i.e. no leading `~`) — a leading space floats it to the
+top, a plain name sorts it among the drugs. The issue carries `r33:{name,bare,hasLeadSpace,fix:'~'+bare}`
+and renders in the standard table (leading space revealed via `.ws-trail`, plus a "Now → Recommended" line).
+**Scope is bottom-only on purpose:** the symmetric "entered at the top but unpinned" case was dropped
+because a plain Rate Mode left at the top is common (it over-flagged 70/203 templates); bottom-only flags
+**1/203** (Middlesex Radiology). **Prefix tolerance:** `isRateModeName` (top-level helper) strips a leading
+space **and** `~` before matching `rate mode`, so a `~`-pinned Rate Mode is still recognized as Rate Mode by
+every rule that special-cases it (rateModeSolo, rate-mode-only-sheet skip, Rules 5/7/31 exclusions, Rule 33)
+— otherwise applying this rule's own fix would make the tool stop treating the entry as Rate Mode.
+
 ---
 
 ## Key JS Functions
