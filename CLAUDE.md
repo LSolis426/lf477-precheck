@@ -592,16 +592,26 @@ The pump lists drugs alphabetically (`pumpCompare`, code-point order: space/symb
 `~`). A **Rate Mode** entry is pinned to the top with a **leading space** or to the bottom with a leading
 **`~`** (tilde = 126, sorts after `z`). Rule 5 deliberately excludes Rate Mode, so its position was never
 checked. Rule 33 captures Rate Mode entries per care area (`rateModeMap`) and, in finalization, flags
-(severity `warn`) any Rate Mode entry placed **last** in its care area (`row > max real-drug row`) whose
-prefix won't keep it at the bottom (`!sortsBottom`, i.e. no leading `~`) — a leading space floats it to the
-top, a plain name sorts it among the drugs. The issue carries `r33:{name,bare,hasLeadSpace,fix:'~'+bare}`
-and renders in the standard table (leading space revealed via `.ws-trail`, plus a "Now → Recommended" line).
-**Scope is bottom-only on purpose:** the symmetric "entered at the top but unpinned" case was dropped
-because a plain Rate Mode left at the top is common (it over-flagged 70/203 templates); bottom-only flags
-**1/203** (Middlesex Radiology). **Prefix tolerance:** `isRateModeName` (top-level helper) strips a leading
-space **and** `~` before matching `rate mode`, so a `~`-pinned Rate Mode is still recognized as Rate Mode by
-every rule that special-cases it (rateModeSolo, rate-mode-only-sheet skip, Rules 5/7/31 exclusions, Rule 33)
-— otherwise applying this rule's own fix would make the tool stop treating the entry as Rate Mode.
+(severity `warn`) a Rate Mode entry whose prefix pins it to the **opposite end** from where it's placed.
+Two branches (`atBottom = row > max real-drug row`, `atTop = row < min real-drug row`; middle = ignored):
+
+- **Bottom (`atBottom && !sortsBottom`):** placed last but no leading `~` — a leading space floats it to the
+  top, a plain name sorts it among the drugs. `fix:'~'+bare`. Flagging the plain case too is safe here
+  because Rate Mode at the bottom is rare.
+- **Reverse / top (`atTop && sortsBottom`):** placed first but a leading `~` drops it to the bottom.
+  `fix:' '+bare`. The message presents **both** fixes (remove `~` for the top, or move the row to the
+  bottom) because the pump sorts alphabetically regardless of row order, so the `~` may be the intended
+  bottom pin. We do **not** flag a plain Rate Mode merely left unpinned at the top — that is common and
+  over-flagged 70/203 templates in testing.
+
+Issue carries `r33:{name,bare,hasLeadSpace,fix}`; renders in the standard table with a `revealLead` helper
+that shows a leading space (current *or* recommended) as a `.ws-trail` marker, plus a "Now → Recommended"
+line. Across 203 real templates it flags **3**: Middlesex (bottom, plain) + Cleveland Clinic Akron and
+Memorial Hermann (reverse — `~Rate Mode` at the top of MRI). **Prefix tolerance:** `isRateModeName`
+(top-level helper) strips a leading space **and** `~` before matching `rate mode`, so a `~`-pinned Rate Mode
+is still recognized as Rate Mode by every rule that special-cases it (rateModeSolo, rate-mode-only-sheet
+skip, Rules 5/7/31 exclusions, Rule 33) — otherwise applying this rule's own fix would make the tool stop
+treating the entry as Rate Mode.
 
 ---
 
