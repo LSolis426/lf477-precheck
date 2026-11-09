@@ -373,12 +373,21 @@ unit/mode column a letters-only guard and every dose/limit/weight column a numbe
 guard. Verified against the MultiCare file (0 false positives) and synthetic cases confirming
 letters in a time column report only under Rule 10, and in AU only under Rule 26.
 
-### Rule 18 — Mismatched Dose Units (mL vs non-mL between Primary and Bolus/Loading)
-mL-based dose units are only compatible with other mL-based units. This rule flags a row where the
-Primary Dose Unit (col I) is mL-based (`mL`, `mL/hr`, …) but a Bolus (col T) or Loading (col AE) unit is
-**not** mL-based — or the reverse (a non-mL primary with an mL Bolus/Loading). Mixing them means the
-sections are dosed in incompatible units, which the pump can't reconcile. Blank sections are ignored;
-only filled units are compared. Severity: error.
+### Rule 18 — Mismatched Dose Units (Primary vs Bolus/Loading in different measurement families)
+A drug has one concentration, so its primary and bolus/loading doses deliver the same substance and must
+be the same **measurement family**. The top-level `doseUnitFamily(unit)` helper strips any `/kg`/`/min`/`/hr`
+modifiers and classifies the base token into **mass** (ng/mcg/mg/g), **volume** (mL), **activity**
+(units/milliunits), **mEq**, or **mmol** — returning `null` for anything it can't classify. This rule flags
+a row where the Primary Dose Unit (col I) and a Bolus (col T) or Loading (col AE) unit resolve to
+**different** families (e.g. `mcg/kg/min` vs `mL/min`, or `mg/hr` vs `units/kg`). Same-family differences
+are **not** flagged — a `mg/hr` primary with a weight-based `mg/kg` bolus is fine (both mass). Blank or
+unclassifiable units are skipped. The issue carries `r15pri`/`r15sec` (each `{label, value, isMl, fam}`),
+rendered as two unit chips tagged with their family. Severity: error.
+
+**Scope history:** originally an mL-vs-non-mL-only check; broadened to full family matching on 2026-11-09.
+Verified behavior-preserving: across all 203 REVISIONS templates the flag set was identical before and
+after (5 flags, all mass↔volume — BSA Dexmedetomidine and Kingman amiodarone — unchanged), i.e. the real
+libraries contain no non-mL cross-family mismatches, but the rule now catches them if they appear.
 
 ### Rule 19 — Bolus/Loading Fields Filled but Primary Unit Not Rate-Based
 The Bolus and Loading sections only make sense when the Primary Dose Unit (col I) is a **rate**

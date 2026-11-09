@@ -489,6 +489,22 @@ function isMLUnit(unit) {
   return u === 'ml' || u.startsWith('ml/');
 }
 
+// Measurement family of a dose unit, for cross-section compatibility (Rule 18). A dose unit is a base
+// substance token optionally followed by /kg, /min, /hr, … — so classify the token before the first "/"
+// (e.g. "mcg/kg/min" → mass, "mL/hr" → volume, "units/hr" → activity, "mEq" → mEq). Returns the family
+// name, or null when the unit can't be confidently classified so Rule 18 won't flag on unknown units.
+function doseUnitFamily(unit) {
+  if (!unit) return null;
+  const base = String(unit).trim().toLowerCase().split('/')[0].replace(/\s+/g, '');
+  if (!base) return null;
+  if (/^(ml|milliliter|milliliters|cc)$/.test(base)) return 'volume';
+  if (/^(ng|nanogram|nanograms|mcg|ug|µg|μg|microgram|micrograms|mg|milligram|milligrams|g|gram|grams)$/.test(base)) return 'mass';
+  if (/^(unit|units|u|iu|milliunit|milliunits|munit|munits|mu)$/.test(base)) return 'activity';
+  if (/^(meq|milliequivalent|milliequivalents|eq)$/.test(base)) return 'mEq';
+  if (/^(mmol|millimole|millimoles|mol|mole|moles)$/.test(base)) return 'mmol';
+  return null; // unknown → don't flag
+}
+
 // Rate-based = dose unit ends in a per-minute or per-hour token (e.g. mg/hr, mcg/kg/min)
 function isRateBasedUnit(unit) {
   if (!unit) return false;
@@ -1287,21 +1303,26 @@ function validate(workbook) {
         }
       }
 
-      // ── Rule 18: Bolus/Loading dose units must match mL vs non-mL of Primary ─
-      const priIsMl = isMLUnit(row[C.PRI_UNIT]);
+      // ── Rule 18: Primary and Bolus/Loading dose units must be the same MEASUREMENT FAMILY ─
+      // One drug has one concentration, so its primary and its bolus/loading doses deliver the same
+      // substance and must be the same family (mass / volume / activity / mEq / mmol). Mixing families
+      // (e.g. mcg/kg/min vs mL/min, or mg/hr vs units/kg) can't be reconciled. Same-family differences
+      // are fine (mcg/kg/min primary with a mg/kg bolus). Units we can't classify are skipped.
+      const priUnit = row[C.PRI_UNIT];
+      const priFam = doseUnitFamily(priUnit);
       const secUnits15 = [
         [C.BOL_UNIT, 'T (Bolus Dose Unit)',    'Bolus'],
         [C.LOD_UNIT, 'AE (Loading Dose Unit)', 'Loading'],
       ];
       for (const [idx, label, section] of secUnits15) {
         const secUnit = row[idx];
-        if (isEmpty(secUnit)) continue;
-        const secIsMl = isMLUnit(secUnit);
-        if ((priIsMl && !secIsMl) || (!priIsMl && secIsMl && !isEmpty(row[C.PRI_UNIT]))) {
+        if (isEmpty(secUnit) || isEmpty(priUnit)) continue;
+        const secFam = doseUnitFamily(secUnit);
+        if (priFam && secFam && priFam !== secFam) {
           allIssues.push({ rule: 18, ...loc,
-            r15pri: { label: 'Primary (col I)',          value: String(row[C.PRI_UNIT]), isMl: priIsMl },
-            r15sec: { label: `${section} (col ${label.split(' ')[0]})`, value: String(secUnit),         isMl: secIsMl },
-            msg: `Primary Dose Unit "${row[C.PRI_UNIT]}" vs ${section} Dose Unit "${secUnit}" — mL dose units are only compatible with other mL dose units`,
+            r15pri: { label: 'Primary (col I)', value: String(priUnit), isMl: priFam === 'volume', fam: priFam },
+            r15sec: { label: `${section} (col ${label.split(' ')[0]})`, value: String(secUnit), isMl: secFam === 'volume', fam: secFam },
+            msg: `Primary Dose Unit "${priUnit}" (${priFam}) vs ${section} Dose Unit "${secUnit}" (${secFam}) — a drug's primary and ${section.toLowerCase()} doses must be the same measurement family (mass, volume, activity, mEq, or mmol).`,
           });
         }
       }
@@ -2196,7 +2217,7 @@ const RULE_INFO = {
   // — Dose Units & Modes (16–21) —
   16: { title: 'Rule 16 — Dose Unit & KVO Mode (cols I, T, AE, AT) Must Be Letters or Blank (no numbers)', severity: 'err' },
   17: { title: 'Rule 17 — Dose/Limit/Weight Columns (J–N, U–Y, AF–AJ, AP–AS) Must Be Numbers or Blank (no letters)', severity: 'err' },
-  18: { title: 'Rule 18 — Mismatched Dose Units (mL vs non-mL between Primary and Bolus/Loading)', severity: 'err' },
+  18: { title: 'Rule 18 — Mismatched Dose Units (Primary vs Bolus/Loading in different measurement families)', severity: 'err' },
   19: { title: 'Rule 19 — Bolus/Loading Fields Filled but Primary Unit is Not Rate-Based (/min or /hr)', severity: 'err' },
   20: { title: 'Rule 20 — Possible Misspelling of "min" in a Dose Unit (cols I / T / AE)', severity: 'err' },
   21: { title: 'Rule 21 — Possible Misspelling of "unit"/"units" (Conc Unit, Dosing Name, or Dose Unit)', severity: 'err' },
@@ -2630,11 +2651,13 @@ function renderResults(issues) {
                   issueCell = `<div class="spell-word">${wordHtml}${escHtml(i.r14rest)}</div>
                                <div class="spell-suggest">→ Did you mean <strong>${escHtml(i.r14suggestion)}</strong>? (${distLabel})</div>`;
                 } else if (i.r15pri !== undefined) {
-                  // Rule 18: show both unit values as colored chips
-                  const chipA = `<span class="unit-chip ${i.r15pri.isMl ? 'is-ml' : 'non-ml'}">${escHtml(i.r15pri.value)}</span><span class="unit-chip-label">${escHtml(i.r15pri.label)}</span>`;
-                  const chipB = `<span class="unit-chip ${i.r15sec.isMl ? 'is-ml' : 'non-ml'}">${escHtml(i.r15sec.value)}</span><span class="unit-chip-label">${escHtml(i.r15sec.label)}</span>`;
+                  // Rule 18: show both unit values as colored chips, each tagged with its family.
+                  const famA = i.r15pri.fam || (i.r15pri.isMl ? 'volume' : '');
+                  const famB = i.r15sec.fam || (i.r15sec.isMl ? 'volume' : '');
+                  const chipA = `<span class="unit-chip ${i.r15pri.isMl ? 'is-ml' : 'non-ml'}">${escHtml(i.r15pri.value)}</span><span class="unit-chip-label">${escHtml(i.r15pri.label)}${famA ? ` · ${escHtml(famA)}` : ''}</span>`;
+                  const chipB = `<span class="unit-chip ${i.r15sec.isMl ? 'is-ml' : 'non-ml'}">${escHtml(i.r15sec.value)}</span><span class="unit-chip-label">${escHtml(i.r15sec.label)}${famB ? ` · ${escHtml(famB)}` : ''}</span>`;
                   issueCell = `<div class="unit-chips">${chipA} <span style="color:#9ca3af">vs</span> ${chipB}</div>
-                               <div class="unit-compat-note">mL dose units are only compatible with other mL dose units</div>`;
+                               <div class="unit-compat-note">A drug's primary and bolus/loading doses must be the same measurement family (mass, volume, activity, mEq, or mmol).</div>`;
                 } else if (i.r16priUnit !== undefined) {
                   // Rule 19: show primary unit + each conflicting section as chips
                   const priChip = `<span class="unit-chip non-ml">${escHtml(i.r16priUnit)}</span><span class="unit-chip-label">Primary (col I)</span>`;
@@ -2884,7 +2907,7 @@ const RULE_DESC = {
   // — Dose Units & Modes (16–21) —
   16:'Dose Unit columns <code>I</code> <code>T</code> <code>AE</code> and KVO Mode <code>AT</code> must be text or blank — no numbers.',
   17:'The dose, limit, and weight columns (<code>J–N</code> <code>U–Y</code> <code>AF–AJ</code> <code>AP–AS</code>) must be a number or blank — no letters.',
-  18:'The Primary unit is mL-based but a Bolus/Loading unit isn’t (or the reverse). mL dose units are only compatible with other mL units.',
+  18:'A drug’s primary and bolus/loading doses deliver the same drug through one concentration, so they must be the same <b>measurement family</b> — mass (<code>mcg</code>/<code>mg</code>/<code>g</code>), volume (<code>mL</code>), activity (<code>units</code>), <code>mEq</code>, or <code>mmol</code>. Flags when the Primary unit and a Bolus/Loading unit are in <b>different</b> families (e.g. <code>mcg/kg/min</code> vs <code>mL/min</code>, or <code>mg/hr</code> vs <code>units/kg</code>). Same-family differences are fine — e.g. a <code>mg/hr</code> primary with a weight-based <code>mg/kg</code> bolus. Units it can’t classify are skipped.',
   19:'Bolus or Loading fields are filled in, but the Primary Dose Unit isn’t a rate (<code>/min</code> or <code>/hr</code>). Those fields should be blank unless the primary is rate-based.',
   20:'A dose unit’s time part looks like a typo of <code>min</code> — e.g. <code>mcg/kg/kin</code>.',
   21:'A unit looks like a typo of <code>unit</code>/<code>units</code> — e.g. <code>uniit</code>. Valid units like <code>milliunits</code>/<code>mUnits</code> are recognized.',
