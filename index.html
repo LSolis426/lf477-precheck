@@ -1048,6 +1048,23 @@ function validate(workbook) {
   const rule31Entries = [];       // Rule 31: every real drug entry workbook-wide {sheet, care, excelRow, name, row}
   let hasVasopressin = false;     // Rule 32: is vasopressin present anywhere in the library?
 
+  // ── Rule 34 data: each sheet's care area (first non-empty col B) in TAB ORDER ──
+  // Independent pass so it doesn't depend on the main loop's branches. Empty / placeholder sheets
+  // (no care area in col B, e.g. a blank "Care Area 2" tab) contribute nothing. Row bound keeps a
+  // sheet with an inflated !ref from being scanned to Excel's max row (col B is always near the top).
+  const tabCareAreas = [];
+  for (const sheetName of workbook.SheetNames) {
+    const ws = workbook.Sheets[sheetName];
+    if (!ws || !ws['!ref']) continue;
+    const rng = XLSX.utils.decode_range(ws['!ref']);
+    let ca = null;
+    for (let r = 3; r <= Math.min(rng.e.r, 400); r++) {
+      const cell = ws[XLSX.utils.encode_cell({ r, c: C.CARE_AREA })];
+      if (cell && cell.v != null && String(cell.v).trim() !== '') { ca = String(cell.v).trim(); break; }
+    }
+    if (ca) tabCareAreas.push({ sheet: sheetName, care: ca });
+  }
+
   for (const sheetName of workbook.SheetNames) {
     const ws = workbook.Sheets[sheetName];
 
@@ -2191,6 +2208,29 @@ function validate(workbook) {
     });
   }
 
+  // ── Rule 34 finalization: care-area tabs should be in alphabetical order ──
+  // Workbook-level. Using each sheet's care area (col B) in tab order, dedupe an overflow sheet that
+  // just continues the previous care area, and when there are 2+ care areas check the sequence is
+  // alphabetical (case-insensitive). Empty / placeholder tabs were already excluded (no col-B value).
+  {
+    const seq = tabCareAreas.filter((v, i) => i === 0 || v.care.toLowerCase() !== tabCareAreas[i - 1].care.toLowerCase());
+    if (seq.length >= 2) {
+      const sorted = [...seq].sort((a, b) => {
+        const x = a.care.toLowerCase(), y = b.care.toLowerCase();
+        return x < y ? -1 : x > y ? 1 : 0;
+      });
+      const curKey = seq.map(s => s.care.toLowerCase()).join('\x00');
+      const sortedKey = sorted.map(s => s.care.toLowerCase()).join('\x00');
+      if (curKey !== sortedKey) {
+        allIssues.push({
+          rule: 34, severity: 'warn',
+          r34: { current: seq.map(s => s.care), sorted: sorted.map(s => s.care) },
+          msg: `Care-area tabs are not in alphabetical order. Current: ${seq.map(s => s.care).join(', ')}. Alphabetical: ${sorted.map(s => s.care).join(', ')}.`,
+        });
+      }
+    }
+  }
+
   return allIssues;
 }
 
@@ -2241,6 +2281,8 @@ const RULE_INFO = {
   32: { title: 'Rule 32 — Vasopressin Not Found in Library', severity: 'warn' },
   // — Rate Mode Placement (33) —
   33: { title: 'Rule 33 — Rate Mode Pinned to the Wrong End of the List (space = top, ~ = bottom)', severity: 'warn' },
+  // — Workbook Organization (34) —
+  34: { title: 'Rule 34 — Care-Area Tabs Not in Alphabetical Order', severity: 'warn' },
 };
 
 function renderResults(issues) {
@@ -2622,6 +2664,18 @@ function renderResults(issues) {
         : `<div class="miss-banner">⚠️ <strong>No vasopressin found in this library.</strong><br>
             Ask the pharmacist whether vasopressin should be added. (Vasostrict, the brand name for
             vasopressin, counts as present.)</div>`;
+    } else if (Number(ruleNum) === 34) {
+      // Workbook-level tab-order check — one advisory banner.
+      if (ruleIssues.length === 0) {
+        bodyHtml = '<div class="ok-banner">✅ Care-area tabs are in alphabetical order.</div>';
+      } else {
+        const i = ruleIssues[0];
+        const arrow = arr => arr.map(c => `<code>${escHtml(c)}</code>`).join(' <span style="color:#9ca3af">→</span> ');
+        bodyHtml = `<div class="miss-banner">⚠️ <strong>Care-area tabs are not in alphabetical order.</strong><br>
+            <div style="margin-top:6px;">Current order: ${arrow(i.r34.current)}</div>
+            <div style="margin-top:3px;">Alphabetical: ${arrow(i.r34.sorted)}</div>
+            <div style="margin-top:6px;">Reorder the sheet tabs so the care areas read alphabetically.</div></div>`;
+      }
     } else {
       // Standard rendering for all other rules
       const stdBadge = ruleIssues.length === 0 ? '✓ Clear' : `${ruleIssues.length} issue${ruleIssues.length !== 1 ? 's' : ''}`;
@@ -2931,6 +2985,8 @@ const RULE_DESC = {
   32:'Checks whether <b>vasopressin</b> appears anywhere in the library (Drug or Dosing Name; the brand name <code>Vasostrict</code> counts too). If none is found, flags a single reminder to ask the pharmacist whether vasopressin should be added. Advisory only — some libraries legitimately omit it.',
   // — Rate Mode Placement (33) —
   33:'The pump lists drugs alphabetically, so a <b>Rate Mode</b> entry is pinned with a prefix: a <b>leading space</b> sorts it to the <b>top</b> (space comes before letters), a leading <b>~</b> (tilde, which sorts after <code>z</code>) sorts it to the <b>bottom</b>. Flags a Rate Mode entry whose prefix pins it to the <b>opposite end</b> from where it\'s placed: entered <i>last</i> (meant for the bottom) but a leading space / plain name keeps it off the bottom → add <code>~</code>; or entered <i>first</i> (meant for the top) but a leading <code>~</code> drops it to the bottom → use a leading space instead. A plain Rate Mode simply left unpinned at the top is common and is <b>not</b> flagged.',
+  // — Workbook Organization (34) —
+  34:'Care-area tabs should be ordered <b>alphabetically</b>. Reads each sheet\'s care area (col B) in tab order — skipping empty placeholder tabs, and merging an overflow sheet that just continues the previous care area — and, when there are 2 or more care areas, flags if that sequence isn\'t alphabetical (case-insensitive). Shows the current tab order vs the alphabetical order so you can rearrange the tabs.',
 };
 (function buildRulesPanel(){
   const body = document.getElementById('rules-body');

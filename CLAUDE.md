@@ -622,6 +622,20 @@ is still recognized as Rate Mode by every rule that special-cases it (rateModeSo
 skip, Rules 5/7/31 exclusions, Rule 33) — otherwise applying this rule's own fix would make the tool stop
 treating the entry as Rate Mode.
 
+### Rule 34 — Care-Area Tabs Not in Alphabetical Order
+Workbook-level (severity `warn`), like Rule 32. A dedicated pass at the top of `validate()` builds
+`tabCareAreas` = `{sheet, care}` for each sheet, where `care` is the first non-empty **col B** value in
+that sheet's data rows (row bound 400 to dodge an inflated `!ref`); sheets with no col-B value (blank /
+placeholder tabs like an empty "Care Area 2") contribute nothing. In finalization, consecutive duplicate
+care areas are deduped (an overflow sheet that continues the previous care area), and when 2+ care areas
+remain, the sequence is compared against a case-insensitive sort; a mismatch emits one issue carrying
+`r34:{current:[…], sorted:[…]}`, rendered as a `.miss-banner` with the current tab order → the alphabetical
+order (special-render branch on `Number(ruleNum)===34`). **Deliberately uses col B, not the tab name** —
+most templates leave the default `Care Area 1/2/3` tab names while the real care area lives in col B, and
+many "3 Care Area" files have only one populated care area plus empty placeholder tabs. **Calibration:** of
+the 203 REVISIONS templates, 50 have 2+ populated care areas; **16** flag (e.g. `[Pediatric, Adult ICU]`,
+`[Adult, PEDS, NICU]`, `[PEDS, NICU]`) — all genuine non-alphabetical orderings.
+
 ---
 
 ## Key JS Functions
