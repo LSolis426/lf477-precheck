@@ -505,6 +505,13 @@ function doseUnitFamily(unit) {
   return null; // unknown → don't flag
 }
 
+// Format an Excel time serial (a fraction of a day) as hh:mm:ss — e.g. 0.006944… → "00:10:00".
+function serialToHMS(v) {
+  const totalSec = Math.round(Number(v) * 86400);
+  const h = Math.floor(totalSec / 3600), m = Math.floor((totalSec % 3600) / 60), s = totalSec % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
 // Rate-based = dose unit ends in a per-minute or per-hour token (e.g. mg/hr, mcg/kg/min)
 function isRateBasedUnit(unit) {
   if (!unit) return false;
@@ -1406,13 +1413,7 @@ function validate(workbook) {
       }
 
       // ── Rule 22 (time limits): same descending order check for time columns ─
-      const fmtTime = v => {
-        const totalSec = Math.round(v * 86400);
-        const h = Math.floor(totalSec / 3600);
-        const m = Math.floor((totalSec % 3600) / 60);
-        const s = totalSec % 60;
-        return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-      };
+      const fmtTime = serialToHMS;
       const timeLimitSets = [
         { section: 'Primary Time', vals: [
           { lbl: 'Upper Hard (P)', v: row[C.PRI_T_UH] },
@@ -2616,9 +2617,13 @@ function renderResults(issues) {
       if (ruleIssues.length === 0) {
         bodyHtml = '<div class="ok-banner">✅ Similar drugs dosed in the same unit all share the same limits.</div>';
       } else {
-        const dispVal = v => isEmpty(v) || (typeof v === 'string' && v.trim() === '')
-          ? '<span class="r31-blank">—</span>'
-          : (isNum(v) ? escHtml(numStr(toNum(v))) : escHtml(String(v)));
+        // Time-limit columns (O–S, Z–AD, AK–AO) hold Excel time serials (fraction of a day); show them
+        // as hh:mm:ss (e.g. 0.006944 → 00:10:00) instead of the raw decimal. Other columns show as-is.
+        const dispVal = (v, isTime) => {
+          if (isEmpty(v) || (typeof v === 'string' && v.trim() === '')) return '<span class="r31-blank">—</span>';
+          if (isTime && isNum(v)) { const n = toNum(v); if (n > 0 && n <= 1) return escHtml(serialToHMS(n)); }
+          return isNum(v) ? escHtml(numStr(toNum(v))) : escHtml(String(v));
+        };
         const groupsHtml = ruleIssues.map(issue => {
           const r = issue.r31;
           // Per column, the most common normalized value; cells not matching it are highlighted.
@@ -2632,8 +2637,9 @@ function renderResults(issues) {
           const headCells = r.cols.map(c => `<th>${escHtml(c)}</th>`).join('');
           const bodyRows = r.members.map(m => {
             const cells = m.vals.map((v, ci) => {
+              const isTime = /Time/.test(r.cols[ci]);
               const diff = r31norm(v) !== modal[ci];
-              return `<td class="${diff ? 'r31-diff' : ''}">${dispVal(v)}</td>`;
+              return `<td class="${diff ? 'r31-diff' : ''}">${dispVal(v, isTime)}</td>`;
             }).join('');
             return `<tr>
               <td class="r31-entry">${escHtml(String(m.name).trim() || '—')}<span class="row-chip">Row ${m.excelRow}</span></td>
